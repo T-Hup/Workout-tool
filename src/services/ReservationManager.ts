@@ -6,7 +6,9 @@
  * Uses integer math (cents) for all monetary values.
  */
 
-export type Status = 'PENDING' | 'APPROVED' | 'REJECTED' | 'FINALIZED' | 'RELEASED' | 'EXPIRED';
+import { DEFAULT_SUBSIDIE_CONFIG, GemeenteConfig } from '../utils/subsidyCalculator';
+
+export type Status = 'PENDING' | 'APPROVED' | 'REJECTED' | 'BESCHIKKING_TOEGEKEND' | 'PAID' | 'RELEASED' | 'EXPIRED';
 
 export interface BudgetState {
     gemeente: string;
@@ -27,6 +29,39 @@ export interface Aanvraag {
     created_at: number; // timestamp
     expires_at: number; // timestamp
     mutations: AuditLogEntry[];
+
+    // SiSa Fields - Financial
+    factuur_bedrag?: number; // in cents
+    definitief_subsidie_bedrag?: number; // in cents
+    datum_beschikking?: string; // ISO date
+    datum_betaling?: string; // ISO date
+
+    // SiSa Fields - Technical
+    type_maatregel?: string;
+    omvang_m2?: number;
+    isolatie_waarde?: string;
+    is_biobased?: boolean;
+    meldcode_isde?: string;
+
+    // SiSa Fields - Evidence (URLs)
+    factuur_pdf?: string;
+    betaalbewijs_pdf?: string;
+    fotos_uitvoering_urls?: string[];
+}
+
+export interface SiSaData {
+    factuur_bedrag: number;
+    definitief_subsidie_bedrag: number;
+    datum_beschikking: string;
+    datum_betaling: string;
+    type_maatregel: string;
+    omvang_m2: number;
+    isolatie_waarde: string;
+    is_biobased: boolean;
+    meldcode_isde: string;
+    factuur_pdf: string;
+    betaalbewijs_pdf: string;
+    fotos_uitvoering_urls: string[];
 }
 
 export interface AuditLogEntry {
@@ -66,6 +101,7 @@ export class ReservationManager {
     private budgets: BudgetState[] = [];
     private aanvragen: Aanvraag[] = [];
     private auditLogs: AuditLogEntry[] = [];
+    private config: { gemeenten: Record<string, GemeenteConfig> } = DEFAULT_SUBSIDIE_CONFIG;
 
     constructor() {
         this.loadState();
@@ -78,6 +114,7 @@ export class ReservationManager {
             this.budgets = data.budgets;
             this.aanvragen = data.aanvragen;
             this.auditLogs = data.auditLogs || [];
+            this.config = data.config || DEFAULT_SUBSIDIE_CONFIG;
         } else {
             this.initializeBudgets();
         }
@@ -87,7 +124,8 @@ export class ReservationManager {
         localStorage.setItem(STORAGE_KEYS.STATE, JSON.stringify({
             budgets: this.budgets,
             aanvragen: this.aanvragen,
-            auditLogs: this.auditLogs
+            auditLogs: this.auditLogs,
+            config: this.config
         }));
     }
 
@@ -127,6 +165,15 @@ export class ReservationManager {
         return this.auditLogs;
     }
 
+    public getConfiguration() {
+        return this.config;
+    }
+
+    public updateConfiguration(newConfig: { gemeenten: Record<string, GemeenteConfig> }) {
+        this.config = newConfig;
+        this.saveState();
+    }
+
     private logAudit(entry: AuditLogEntry) {
         this.auditLogs.push(entry);
         // Also add to the specific aanvraag if exists? 
@@ -146,7 +193,7 @@ export class ReservationManager {
 
         // 1. Check duplicate active reservation
         const existingRecent = this.aanvragen.find(
-            a => a.bagId === bagId && ['PENDING', 'APPROVED', 'FINALIZED'].includes(a.status)
+            a => a.bagId === bagId && ['PENDING', 'APPROVED', 'BESCHIKKING_TOEGEKEND', 'PAID'].includes(a.status)
         );
 
         if (existingRecent) {
@@ -222,20 +269,25 @@ export class ReservationManager {
 
         const now = Date.now();
 
-        if (aanvraag.status !== 'PENDING') {
-            // Can only approve/reject pending requests in this simplified flow
-            // Or allow transitions if confirmed?
-            // Let's stick to strict flow for safety
-            if (aanvraag.status === 'FINALIZED' || aanvraag.status === 'RELEASED') return false;
+        if (aanvraag.status !== 'PENDING' && aanvraag.status !== 'BESCHIKKING_TOEGEKEND') {
+            // Can only approve/reject pending or awarded requests
+            if (aanvraag.status === 'RELEASED' || aanvraag.status === 'PAID') return false;
         }
 
         if (newStatus === 'APPROVED') {
+            // Validation: Cannot finalize without complete SiSa data
+            if (!this.validateSiSaCompleteness(aanvraag)) {
+                // Return false or throw error? Returning false for now as per signature
+                console.error(`Cannot finalize aanvraag ${aanvraagId}: Incomplete SiSa data.`);
+                return false;
+            }
+
             // Move from RESERVED to SPENT
             if (budget) {
                 budget.gereserveerd -= aanvraag.bedrag;
                 budget.uitgegeven += aanvraag.bedrag;
             }
-            aanvraag.status = 'FINALIZED';
+            aanvraag.status = 'BESCHIKKING_TOEGEKEND';
 
             const log: AuditLogEntry = {
                 timestamp: now,
@@ -251,7 +303,11 @@ export class ReservationManager {
         } else if (newStatus === 'REJECTED') {
             // specific logic needed here
             if (budget) {
-                budget.gereserveerd -= aanvraag.bedrag;
+                if (aanvraag.status === 'BESCHIKKING_TOEGEKEND') {
+                    budget.uitgegeven -= aanvraag.bedrag;
+                } else {
+                    budget.gereserveerd -= aanvraag.bedrag;
+                }
                 budget.beschikbaar += aanvraag.bedrag;
             }
             aanvraag.status = 'RELEASED';
@@ -262,13 +318,110 @@ export class ReservationManager {
                 actie: 'VRIJVAL',
                 bedrag: aanvraag.bedrag,
                 saldo_na_mutatie: budget ? budget.beschikbaar : 0,
-                details: 'Afgewezen (HubSpot: REJECTED)'
+                details: 'Afgewezen/Vrijgevallen'
             };
             aanvraag.mutations.push(log);
             this.logAudit(log);
         }
 
         this.saveState();
+        return true;
+    }
+
+    /**
+     * Mark an application as Paid.
+     * Transitions status from FINALIZED to PAID and sets datum_betaling.
+     */
+    public markAsPaid(aanvraagId: string, datumBetaling?: string): { success: boolean; message: string } {
+        const aanvraag = this.aanvragen.find(a => a.id === aanvraagId);
+        if (!aanvraag) return { success: false, message: 'Aanvraag niet gevonden.' };
+
+        if (aanvraag.status !== 'BESCHIKKING_TOEGEKEND') {
+            return { success: false, message: 'Alleen goedgekeurde aanvragen (BESCHIKKING_TOEGEKEND) kunnen als betaald worden gemarkeerd.' };
+        }
+
+        const now = Date.now();
+        aanvraag.status = 'PAID';
+        // Set payment date (either passed or today)
+        aanvraag.datum_betaling = datumBetaling || new Date().toISOString().split('T')[0];
+
+        const log: AuditLogEntry = {
+            timestamp: now,
+            bagId: aanvraag.bagId,
+            actie: 'UITBETALING',
+            bedrag: aanvraag.bedrag,
+            saldo_na_mutatie: this.getBudget(aanvraag.gemeente, aanvraag.doelgroep as 1 | 2)?.beschikbaar || 0,
+            details: 'Subsidie uitbetaald'
+        };
+
+        aanvraag.mutations.push(log);
+        this.logAudit(log);
+        this.saveState();
+
+        return { success: true, message: 'Status bijgewerkt naar Betaald.' };
+    }
+
+
+    /**
+     * Update an existing reservation with SiSa reporting data.
+     * This allows adding technical/financial details before finalization.
+     */
+    public updateAanvraagMetHubspotData(aanvraagId: string, data: Partial<SiSaData>): { success: boolean; message: string } {
+        const aanvraag = this.aanvragen.find(a => a.id === aanvraagId);
+        if (!aanvraag) {
+            return { success: false, message: 'Aanvraag niet gevonden.' };
+        }
+
+        // Allow updates only if not yet finalized/expired? 
+        // Or maybe allow updates even after finalization for corrections?
+        // Assuming updates allowed if active or pending.
+        if (aanvraag.status === 'EXPIRED') {
+            return { success: false, message: 'Kan verlopen aanvraag niet bijwerken.' };
+        }
+
+        // Merge fields
+        if (data.factuur_bedrag !== undefined) aanvraag.factuur_bedrag = data.factuur_bedrag;
+        if (data.definitief_subsidie_bedrag !== undefined) aanvraag.definitief_subsidie_bedrag = data.definitief_subsidie_bedrag;
+        if (data.datum_beschikking) aanvraag.datum_beschikking = data.datum_beschikking;
+        if (data.datum_betaling) aanvraag.datum_betaling = data.datum_betaling;
+
+        if (data.type_maatregel) aanvraag.type_maatregel = data.type_maatregel;
+        if (data.omvang_m2 !== undefined) aanvraag.omvang_m2 = data.omvang_m2;
+        if (data.isolatie_waarde) aanvraag.isolatie_waarde = data.isolatie_waarde;
+        if (data.is_biobased !== undefined) aanvraag.is_biobased = data.is_biobased;
+        if (data.meldcode_isde) aanvraag.meldcode_isde = data.meldcode_isde;
+
+        if (data.factuur_pdf) aanvraag.factuur_pdf = data.factuur_pdf;
+        if (data.betaalbewijs_pdf) aanvraag.betaalbewijs_pdf = data.betaalbewijs_pdf;
+        if (data.fotos_uitvoering_urls) aanvraag.fotos_uitvoering_urls = data.fotos_uitvoering_urls;
+
+        this.saveState();
+        return { success: true, message: 'Data bijgewerkt.' };
+    }
+
+    /**
+     * Validates if all required SiSa fields are present for Finalization.
+     */
+    private validateSiSaCompleteness(aanvraag: Aanvraag): boolean {
+        // Financial
+        if (aanvraag.factuur_bedrag === undefined) return false;
+        if (aanvraag.definitief_subsidie_bedrag === undefined) return false;
+        if (!aanvraag.datum_beschikking) return false;
+        // Payout date is no longer required for BESCHIKKING_TOEGEKEND
+        // if (!aanvraag.datum_betaling) return false;
+
+        // Technical
+        if (!aanvraag.type_maatregel) return false;
+        if (aanvraag.omvang_m2 === undefined) return false;
+        if (!aanvraag.isolatie_waarde) return false;
+        if (aanvraag.is_biobased === undefined) return false;
+        if (!aanvraag.meldcode_isde) return false;
+
+        // Evidence
+        if (!aanvraag.factuur_pdf) return false;
+        if (!aanvraag.betaalbewijs_pdf) return false;
+        if (!aanvraag.fotos_uitvoering_urls || aanvraag.fotos_uitvoering_urls.length === 0) return false;
+
         return true;
     }
 

@@ -81,7 +81,11 @@ export interface SubsidieResultaat {
  * Subsidy configuration per municipality
  * Contains rules for three target groups per municipality
  */
-const subsidieConfig: {
+/**
+ * Subsidy configuration per municipality
+ * Contains rules for three target groups per municipality
+ */
+export const DEFAULT_SUBSIDIE_CONFIG: {
   gemeenten: Record<string, GemeenteConfig>;
 } = {
   gemeenten: {
@@ -344,8 +348,7 @@ function meetsLabelRequirement(
  */
 function evaluateDoelgroep(
   houseData: HouseData,
-  dgConfig: DoelgroepConfig,
-  doelgroepKey: string
+  dgConfig: DoelgroepConfig
 ): { eligible: boolean; reason?: string } {
   // Skip inactive target groups
   if (!dgConfig.actief) {
@@ -406,7 +409,11 @@ function evaluateDoelgroep(
  * });
  * ```
  */
-export function checkSubsidyEligibility(houseData: HouseData): SubsidieResultaat {
+export function checkSubsidyEligibility(
+  houseData: HouseData,
+  configOverride?: { gemeenten: Record<string, GemeenteConfig> }
+): SubsidieResultaat {
+  const config = configOverride || DEFAULT_SUBSIDIE_CONFIG;
   // ========================================================================
   // BLOCKER 1: Duplicate Application Check
   // ========================================================================
@@ -430,7 +437,7 @@ export function checkSubsidyEligibility(houseData: HouseData): SubsidieResultaat
   // ========================================================================
   // Load Municipality Configuration
   // ========================================================================
-  const gemeenteConfig = subsidieConfig.gemeenten[houseData.gemeente];
+  const gemeenteConfig = config.gemeenten[houseData.gemeente];
   if (!gemeenteConfig) {
     throw new Error(`Gemeente "${houseData.gemeente}" niet ondersteund`);
   }
@@ -445,7 +452,7 @@ export function checkSubsidyEligibility(houseData: HouseData): SubsidieResultaat
 
   for (const doelgroepKey of DOELGROEP_KEYS) {
     const dgConfig = gemeenteConfig[doelgroepKey];
-    const evaluation = evaluateDoelgroep(houseData, dgConfig, doelgroepKey);
+    const evaluation = evaluateDoelgroep(houseData, dgConfig);
 
     if (evaluation.eligible) {
       eligible_doelgroepen.push(doelgroepKey);
@@ -486,7 +493,7 @@ export function checkSubsidyEligibility(houseData: HouseData): SubsidieResultaat
   for (const doelgroepKey of finalEligibleDoelgroepen) {
     toegewezen_doelgroepen.push(doelgroepKey);
 
-    const dgConfig = gemeenteConfig[doelgroepKey];
+    const dgConfig = gemeenteConfig[doelgroepKey as keyof GemeenteConfig];
     // Add subsidy details for all routes if available
     if (dgConfig.subsidie_routes) {
       for (const route of dgConfig.subsidie_routes) {
@@ -518,25 +525,28 @@ export function checkSubsidyEligibility(houseData: HouseData): SubsidieResultaat
 /**
  * Get list of supported municipalities
  */
-export function getSupportedMunicipalities(): string[] {
-  return Object.keys(subsidieConfig.gemeenten);
+export function getSupportedMunicipalities(configOverride?: { gemeenten: Record<string, GemeenteConfig> }): string[] {
+  const config = configOverride || DEFAULT_SUBSIDIE_CONFIG;
+  return Object.keys(config.gemeenten);
 }
 
 /**
  * Check if a municipality is supported
  */
-export function isMunicipalitySupported(gemeente: string): boolean {
-  return gemeente in subsidieConfig.gemeenten;
+export function isMunicipalitySupported(gemeente: string, configOverride?: { gemeenten: Record<string, GemeenteConfig> }): boolean {
+  const config = configOverride || DEFAULT_SUBSIDIE_CONFIG;
+  return gemeente in config.gemeenten;
 }
 
 /**
  * Get configuration for a specific municipality
  * @throws Error if municipality is not supported
  */
-export function getMunicipalityConfig(gemeente: string): GemeenteConfig {
-  const config = subsidieConfig.gemeenten[gemeente];
-  if (!config) {
+export function getMunicipalityConfig(gemeente: string, configOverride?: { gemeenten: Record<string, GemeenteConfig> }): GemeenteConfig {
+  const config = configOverride || DEFAULT_SUBSIDIE_CONFIG;
+  const c = config.gemeenten[gemeente];
+  if (!c) {
     throw new Error(`Gemeente "${gemeente}" niet ondersteund`);
   }
-  return config;
+  return c;
 }

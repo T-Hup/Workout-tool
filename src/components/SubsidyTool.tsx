@@ -38,7 +38,7 @@ export default function SubsidyTool() {
     }, []);
 
     // ... configuration ...
-    const gemeenten = getSupportedMunicipalities();
+    const gemeenten = getSupportedMunicipalities(reservationManager.getConfiguration());
     const energielabels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'ONBEKEND'];
     const woningtypes = ['Tussenwoning', 'Hoekwoning', 'Vrijstaand', '2-onder-1-kap', 'Appartement'];
 
@@ -114,7 +114,8 @@ export default function SubsidyTool() {
         }
 
         try {
-            const subsidieResult = checkSubsidyEligibility(formData);
+            const config = reservationManager.getConfiguration();
+            const subsidieResult = checkSubsidyEligibility(formData, config);
             setResult(subsidieResult);
             setError('');
         } catch (err) {
