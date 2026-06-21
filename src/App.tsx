@@ -1,23 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
-  ChevronLeft,
-  Dumbbell,
-  Timer,
-  Target,
-  CheckCircle2,
-  Circle,
-  Play,
-  Pause,
-  RotateCcw,
-  ChevronDown,
-  ChevronUp,
-  Calendar,
-  Check,
-  Trash2,
-  Award,
+  ChevronLeft, Dumbbell, Timer, Target, CheckCircle2, Circle,
+  Play, Pause, RotateCcw, ChevronDown, ChevronUp, Calendar,
+  Check, Trash2, Award, Plus, Pencil, X, LogOut, User,
 } from 'lucide-react';
+import type { Session } from '@supabase/supabase-js';
+import { supabase } from './supabaseClient';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────────
 
 interface Exercise {
   id: string;
@@ -25,39 +15,118 @@ interface Exercise {
   reps: string;
   sets: number;
   focus: string;
-  muscleGroup: string;
+  muscle_group: string;
   image: string;
   tips: string[];
-}
-
-interface WorkoutPlan {
-  title: string;
-  exercises: Exercise[];
+  workout_key: string;
+  sort_order: number;
 }
 
 interface SetLog {
-  set: number;
+  set_number: number;
   weight: string;
   completed: boolean;
 }
 
-interface ExerciseLog {
-  name: string;
-  sets: SetLog[];
-}
-
 interface WorkoutLog {
   id: string;
-  date: string;
-  workoutTitle: string;
-  exercises: ExerciseLog[];
+  workout_title: string;
+  created_at: string;
+  log_exercises: { exercise_name: string; log_sets: SetLog[] }[];
 }
 
 type CompletedSets = Record<string, boolean>;
 type ExerciseWeights = Record<string, Record<string, string>>;
-type SavedWeights = Record<string, string>;
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Defaults seeded for new users ─────────────────────────────────────────────
+
+const DEFAULT_EXERCISES: Omit<Exercise, 'id' | 'sort_order'>[] = [
+  {
+    name: 'Back Squat', reps: '5 tot 8', sets: 3, focus: 'Bovenbenen en Billen',
+    muscle_group: 'quads', workout_key: 'A',
+    image: 'https://images.unsplash.com/photo-1574680096145-d05b474e2155?auto=format&fit=crop&w=600&q=80',
+    tips: ['Plaats voeten op schouderbreedte', 'Houd de rug recht', 'Zak tot de heupen onder de knieën zijn'],
+  },
+  {
+    name: 'Dumbbell Bench Press', reps: '8 tot 12', sets: 3, focus: 'Borst en Triceps',
+    muscle_group: 'chest', workout_key: 'A',
+    image: 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?auto=format&fit=crop&w=600&q=80',
+    tips: ['Duw de schouderbladen in het bankje', 'Breng dumbbells gecontroleerd omlaag', 'Strek armen krachtig uit'],
+  },
+  {
+    name: 'Lat Pulldown', reps: '8 tot 12', sets: 3, focus: 'Bovenrug en Breedte',
+    muscle_group: 'lats', workout_key: 'A',
+    image: 'https://images.unsplash.com/photo-1603398938378-e54eab446dde?auto=format&fit=crop&w=600&q=80',
+    tips: ['Trek de stang naar de bovenkant borst', 'Leun heel licht naar achteren', 'Knijp de schouderbladen samen'],
+  },
+  {
+    name: 'Dumbbell Romanian Deadlift', reps: '8 tot 10', sets: 3, focus: 'Hamstrings en Billen',
+    muscle_group: 'hamstrings', workout_key: 'A',
+    image: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=600&q=80',
+    tips: ['Duw de heupen maximaal naar achteren', 'Houd de dumbbells dicht bij je benen', 'Lichte buiging in de knieën houden'],
+  },
+  {
+    name: 'Dumbbell Lateral Raises', reps: '12 tot 15', sets: 3, focus: 'Zijkant Schouders',
+    muscle_group: 'shoulders', workout_key: 'A',
+    image: 'https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?auto=format&fit=crop&w=600&q=80',
+    tips: ['Leun heel licht voorover', 'Breng dumbbells zijwaarts omhoog', 'Houd je ellebogen iets gebogen'],
+  },
+  {
+    name: 'Plank', reps: '45 tot 60 seconden', sets: 3, focus: 'Core en Buikspieren',
+    muscle_group: 'core', workout_key: 'A',
+    image: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=600&q=80',
+    tips: ['Houd je lichaam in een rechte lijn', 'Span je buik en billen hard aan', 'Kijk naar de grond vlak voor je'],
+  },
+  {
+    name: 'Trap Bar Deadlift', reps: '5 tot 8', sets: 3, focus: 'Heel lichaam en Grip',
+    muscle_group: 'fullbody', workout_key: 'B',
+    image: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=600&q=80',
+    tips: ['Stel je voeten in het midden op', 'Houd je borst op en rug recht', 'Duw de grond hard weg om te starten'],
+  },
+  {
+    name: 'Incline Dumbbell Press', reps: '8 tot 12', sets: 3, focus: 'Bovenkant Borst',
+    muscle_group: 'chest', workout_key: 'B',
+    image: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?auto=format&fit=crop&w=600&q=80',
+    tips: ['Zet het bankje op dertig graden', 'Breng de gewichten tot borsthoogte', 'Duw omhoog in een lichte boog'],
+  },
+  {
+    name: 'Chest-Supported Row', reps: '8 tot 12', sets: 3, focus: 'Middenrug en Dikte',
+    muscle_group: 'lats', workout_key: 'B',
+    image: 'https://images.unsplash.com/photo-1605296867304-46d5465a25f1?auto=format&fit=crop&w=600&q=80',
+    tips: ['Druk je borst stevig tegen het kussen', 'Trek ellebogen ver naar achteren', 'Laat het gewicht rustig zakken'],
+  },
+  {
+    name: 'Bulgarian Split Squat', reps: '8 tot 10 per been', sets: 3, focus: 'Benen en Balans',
+    muscle_group: 'quads', workout_key: 'B',
+    image: 'https://images.unsplash.com/photo-1434608519344-49d77a699e1d?auto=format&fit=crop&w=600&q=80',
+    tips: ['Plaats een voet achter je op een bankje', 'Zak recht naar beneden', 'Houd je voorste knie stabiel'],
+  },
+  {
+    name: 'Face Pulls', reps: '12 tot 15', sets: 3, focus: 'Achterkant Schouders',
+    muscle_group: 'shoulders', workout_key: 'B',
+    image: 'https://images.unsplash.com/photo-1593079831268-3381b0db4a77?auto=format&fit=crop&w=600&q=80',
+    tips: ['Trek het touw richting je voorhoofd', 'Trek je handen aan het eind uit elkaar', 'Houd de ellebogen hoog'],
+  },
+  {
+    name: "Farmer's Carries", reps: '30 tot 40 meter', sets: 3, focus: 'Gripkracht en Core',
+    muscle_group: 'grip', workout_key: 'B',
+    image: 'https://images.unsplash.com/photo-1476480862126-209bfaa8edc8?auto=format&fit=crop&w=600&q=80',
+    tips: ['Pak zware dumbbells of gewichten', 'Loop met actieve, trotse borst', 'Zet kleine, gecontroleerde stappen'],
+  },
+];
+
+const MUSCLE_GROUPS = [
+  { value: 'quads', label: 'Quads' },
+  { value: 'hamstrings', label: 'Hamstrings' },
+  { value: 'chest', label: 'Borst' },
+  { value: 'lats', label: 'Rug (breed)' },
+  { value: 'shoulders', label: 'Schouders' },
+  { value: 'core', label: 'Core' },
+  { value: 'grip', label: 'Grip / Onderarm' },
+  { value: 'fullbody', label: 'Heel lichaam' },
+];
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -65,209 +134,15 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-function loadStorage<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-// ── Workout Data ──────────────────────────────────────────────────────────────
-
-const workoutData: Record<string, WorkoutPlan> = {
-  A: {
-    title: 'Training A',
-    exercises: [
-      {
-        id: 'a1',
-        name: 'Back Squat',
-        reps: '5 tot 8',
-        sets: 3,
-        focus: 'Bovenbenen en Billen',
-        muscleGroup: 'quads',
-        image: 'https://images.unsplash.com/photo-1574680096145-d05b474e2155?auto=format&fit=crop&w=600&q=80',
-        tips: [
-          'Plaats voeten op schouderbreedte',
-          'Houd de rug recht',
-          'Zak tot de heupen onder de knieën zijn',
-        ],
-      },
-      {
-        id: 'a2',
-        name: 'Dumbbell Bench Press',
-        reps: '8 tot 12',
-        sets: 3,
-        focus: 'Borst en Triceps',
-        muscleGroup: 'chest',
-        image: 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?auto=format&fit=crop&w=600&q=80',
-        tips: [
-          'Duw de schouderbladen in het bankje',
-          'Breng dumbbells gecontroleerd omlaag',
-          'Strek armen krachtig uit',
-        ],
-      },
-      {
-        id: 'a3',
-        name: 'Lat Pulldown',
-        reps: '8 tot 12',
-        sets: 3,
-        focus: 'Bovenrug en Breedte',
-        muscleGroup: 'lats',
-        image: 'https://images.unsplash.com/photo-1603398938378-e54eab446dde?auto=format&fit=crop&w=600&q=80',
-        tips: [
-          'Trek de stang naar de bovenkant borst',
-          'Leun heel licht naar achteren',
-          'Knijp de schouderbladen samen',
-        ],
-      },
-      {
-        id: 'a4',
-        name: 'Dumbbell Romanian Deadlift',
-        reps: '8 tot 10',
-        sets: 3,
-        focus: 'Hamstrings en Billen',
-        muscleGroup: 'hamstrings',
-        image: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=600&q=80',
-        tips: [
-          'Duw de heupen maximaal naar achteren',
-          'Houd de dumbbells dicht bij je benen',
-          'Lichte buiging in de knieën houden',
-        ],
-      },
-      {
-        id: 'a5',
-        name: 'Dumbbell Lateral Raises',
-        reps: '12 tot 15',
-        sets: 3,
-        focus: 'Zijkant Schouders',
-        muscleGroup: 'shoulders',
-        image: 'https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?auto=format&fit=crop&w=600&q=80',
-        tips: [
-          'Leun heel licht voorover',
-          'Breng dumbbells zijwaarts omhoog',
-          'Houd je ellebogen iets gebogen',
-        ],
-      },
-      {
-        id: 'a6',
-        name: 'Plank',
-        reps: '45 tot 60 seconden',
-        sets: 3,
-        focus: 'Core en Buikspieren',
-        muscleGroup: 'core',
-        image: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=600&q=80',
-        tips: [
-          'Houd je lichaam in een rechte lijn',
-          'Span je buik en billen hard aan',
-          'Kijk naar de grond vlak voor je',
-        ],
-      },
-    ],
-  },
-  B: {
-    title: 'Training B',
-    exercises: [
-      {
-        id: 'b1',
-        name: 'Trap Bar Deadlift',
-        reps: '5 tot 8',
-        sets: 3,
-        focus: 'Hele lichaam en Grip',
-        muscleGroup: 'fullbody',
-        image: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=600&q=80',
-        tips: [
-          'Stel je voeten in het midden op',
-          'Houd je borst op en rug recht',
-          'Duw de grond hard weg om te starten',
-        ],
-      },
-      {
-        id: 'b2',
-        name: 'Incline Dumbbell Press',
-        reps: '8 tot 12',
-        sets: 3,
-        focus: 'Bovenkant Borst',
-        muscleGroup: 'chest',
-        image: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?auto=format&fit=crop&w=600&q=80',
-        tips: [
-          'Zet het bankje op dertig graden',
-          'Breng de gewichten tot borsthoogte',
-          'Duw omhoog in een lichte boog',
-        ],
-      },
-      {
-        id: 'b3',
-        name: 'Chest-Supported Row',
-        reps: '8 tot 12',
-        sets: 3,
-        focus: 'Middenrug en Dikte',
-        muscleGroup: 'lats',
-        image: 'https://images.unsplash.com/photo-1605296867304-46d5465a25f1?auto=format&fit=crop&w=600&q=80',
-        tips: [
-          'Druk je borst stevig tegen het kussen',
-          'Trek ellebogen ver naar achteren',
-          'Laat het gewicht rustig zakken',
-        ],
-      },
-      {
-        id: 'b4',
-        name: 'Bulgarian Split Squat',
-        reps: '8 tot 10 per been',
-        sets: 3,
-        focus: 'Benen en Balans',
-        muscleGroup: 'quads',
-        image: 'https://images.unsplash.com/photo-1434608519344-49d77a699e1d?auto=format&fit=crop&w=600&q=80',
-        tips: [
-          'Plaats een voet achter je op een bankje',
-          'Zak recht naar beneden',
-          'Houd je voorste knie stabiel',
-        ],
-      },
-      {
-        id: 'b5',
-        name: 'Face Pulls',
-        reps: '12 tot 15',
-        sets: 3,
-        focus: 'Achterkant Schouders',
-        muscleGroup: 'shoulders',
-        image: 'https://images.unsplash.com/photo-1593079831268-3381b0db4a77?auto=format&fit=crop&w=600&q=80',
-        tips: [
-          'Trek het touw richting je voorhoofd',
-          'Trek je handen aan het eind uit elkaar',
-          'Houd de ellebogen hoog',
-        ],
-      },
-      {
-        id: 'b6',
-        name: "Farmer's Carries",
-        reps: '30 tot 40 meter',
-        sets: 3,
-        focus: 'Gripkracht en Core',
-        muscleGroup: 'grip',
-        image: 'https://images.unsplash.com/photo-1476480862126-209bfaa8edc8?auto=format&fit=crop&w=600&q=80',
-        tips: [
-          'Pak zware dumbbells of gewichten',
-          'Loop met actieve, trotse borst',
-          'Zet kleine, gecontroleerde stappen',
-        ],
-      },
-    ],
-  },
-};
-
-// ── MuscleMap ─────────────────────────────────────────────────────────────────
+// ── MuscleMap ──────────────────────────────────────────────────────────────────
 
 const ACTIVE = '#f97316';
 const BASE = '#475569';
 
 function MuscleMap({ highlight }: { highlight: string }) {
   const on = (groups: string[]) => (groups.includes(highlight) ? ACTIVE : BASE);
-
   return (
     <div className="flex justify-center gap-8 bg-slate-900 p-4 rounded-3xl">
-      {/* Front */}
       <div className="flex flex-col items-center">
         <span className="text-[10px] text-slate-400 font-bold mb-2">VOORKANT</span>
         <svg viewBox="0 0 100 220" className="w-20 h-40">
@@ -284,8 +159,6 @@ function MuscleMap({ highlight }: { highlight: string }) {
           <path d="M72,165 L68,210 L56,210 L54,165 Z" fill={BASE} />
         </svg>
       </div>
-
-      {/* Back */}
       <div className="flex flex-col items-center">
         <span className="text-[10px] text-slate-400 font-bold mb-2">ACHTERKANT</span>
         <svg viewBox="0 0 100 220" className="w-20 h-40">
@@ -294,10 +167,7 @@ function MuscleMap({ highlight }: { highlight: string }) {
           <path d="M25,45 Q50,40 75,45 L70,55 L30,55 Z" fill={on(['shoulders', 'fullbody'])} />
           <path d="M30,55 Q50,55 70,55 L65,90 L35,90 Z" fill={on(['lats', 'fullbody'])} />
           <rect x="35" y="90" width="30" height="25" fill={on(['lats', 'fullbody'])} />
-          <path
-            d="M33,115 Q50,120 67,115 L64,135 Q50,140 36,135 Z"
-            fill={on(['hamstrings', 'quads', 'fullbody'])}
-          />
+          <path d="M33,115 Q50,120 67,115 L64,135 Q50,140 36,135 Z" fill={on(['hamstrings', 'quads', 'fullbody'])} />
           <path d="M34,135 L30,175 L46,175 L48,135 Z" fill={on(['hamstrings', 'fullbody'])} />
           <path d="M66,135 L70,175 L54,175 L52,135 Z" fill={on(['hamstrings', 'fullbody'])} />
           <path d="M30,175 L33,210 L44,210 L46,175 Z" fill={BASE} />
@@ -308,59 +178,312 @@ function MuscleMap({ highlight }: { highlight: string }) {
   );
 }
 
-// ── App ───────────────────────────────────────────────────────────────────────
+// ── Toast ──────────────────────────────────────────────────────────────────────
+
+function Toast({ message }: { message: string }) {
+  return (
+    <div className="fixed top-6 left-4 right-4 z-50 bg-slate-900 border border-slate-700 px-4 py-3 rounded-2xl shadow-xl flex items-center gap-3 animate-slide-in">
+      <div className="p-1 bg-blue-500/10 rounded-lg shrink-0">
+        <Check className="text-blue-400 w-5 h-5" />
+      </div>
+      <span className="text-xs font-bold text-white">{message}</span>
+    </div>
+  );
+}
+
+// ── Auth Screen ────────────────────────────────────────────────────────────────
+
+function AuthScreen({ onAuth }: { onAuth: () => void }) {
+  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    if (mode === 'login') {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) setError(error.message);
+      else onAuth();
+    } else {
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) setError(error.message);
+      else setDone(true);
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6">
+      <div className="max-w-sm w-full space-y-8">
+        <div className="flex items-center gap-3">
+          <div className="bg-blue-600/20 p-3 rounded-2xl">
+            <Dumbbell className="text-blue-500 w-8 h-8" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-black tracking-tight">Gym Tracker</h1>
+            <p className="text-xs text-slate-400">Jouw progressie, altijd bewaard</p>
+          </div>
+        </div>
+
+        {done ? (
+          <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-2xl p-5 text-sm text-emerald-300">
+            Check je e-mail voor een bevestigingslink, dan kun je inloggen.
+          </div>
+        ) : (
+          <form onSubmit={submit} className="space-y-4">
+            <h2 className="text-lg font-black">
+              {mode === 'login' ? 'Inloggen' : 'Account aanmaken'}
+            </h2>
+            <input
+              type="email"
+              placeholder="E-mailadres"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+            />
+            <input
+              type="password"
+              placeholder="Wachtwoord"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+              className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500"
+            />
+            {error && <p className="text-xs text-rose-400">{error}</p>}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-blue-600 active:bg-blue-700 p-4 rounded-2xl font-black text-sm disabled:opacity-50"
+            >
+              {loading ? 'Laden…' : mode === 'login' ? 'Inloggen' : 'Account aanmaken'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); }}
+              className="w-full text-xs text-slate-400 underline"
+            >
+              {mode === 'login' ? 'Nog geen account? Registreren' : 'Al een account? Inloggen'}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Exercise Form Modal ────────────────────────────────────────────────────────
+
+interface ExerciseFormProps {
+  exercise?: Exercise;
+  workoutKey: string;
+  onSave: (ex: Partial<Exercise>) => Promise<void>;
+  onClose: () => void;
+}
+
+function ExerciseForm({ exercise, workoutKey, onSave, onClose }: ExerciseFormProps) {
+  const [name, setName] = useState(exercise?.name ?? '');
+  const [reps, setReps] = useState(exercise?.reps ?? '');
+  const [sets, setSets] = useState(String(exercise?.sets ?? 3));
+  const [focus, setFocus] = useState(exercise?.focus ?? '');
+  const [muscleGroup, setMuscleGroup] = useState(exercise?.muscle_group ?? 'quads');
+  const [image, setImage] = useState(exercise?.image ?? '');
+  const [tipsRaw, setTipsRaw] = useState((exercise?.tips ?? []).join('\n'));
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    if (!name.trim() || !reps.trim() || !focus.trim()) return;
+    setSaving(true);
+    await onSave({
+      name: name.trim(),
+      reps: reps.trim(),
+      sets: parseInt(sets) || 3,
+      focus: focus.trim(),
+      muscle_group: muscleGroup,
+      image: image.trim(),
+      tips: tipsRaw.split('\n').map((t) => t.trim()).filter(Boolean),
+      workout_key: workoutKey,
+    });
+    setSaving(false);
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-sm max-h-[90vh] overflow-y-auto p-6 space-y-4">
+        <div className="flex justify-between items-center">
+          <h3 className="text-lg font-black">{exercise ? 'Oefening bewerken' : 'Oefening toevoegen'}</h3>
+          <button onClick={onClose} className="p-2 rounded-xl bg-slate-800"><X size={18} /></button>
+        </div>
+
+        <div className="space-y-3">
+          <input
+            placeholder="Naam *"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500"
+          />
+          <input
+            placeholder="Herhalingen (bijv. 8 tot 12) *"
+            value={reps}
+            onChange={(e) => setReps(e.target.value)}
+            className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500"
+          />
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Aantal sets</label>
+              <input
+                type="number"
+                min="1"
+                max="10"
+                value={sets}
+                onChange={(e) => setSets(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Spiergroep</label>
+              <select
+                value={muscleGroup}
+                onChange={(e) => setMuscleGroup(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500"
+              >
+                {MUSCLE_GROUPS.map((g) => (
+                  <option key={g.value} value={g.value}>{g.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <input
+            placeholder="Focus (bijv. Borst en Triceps) *"
+            value={focus}
+            onChange={(e) => setFocus(e.target.value)}
+            className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500"
+          />
+          <input
+            placeholder="Afbeelding URL (optioneel)"
+            value={image}
+            onChange={(e) => setImage(e.target.value)}
+            className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500"
+          />
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Tips (één per regel)</label>
+            <textarea
+              rows={3}
+              value={tipsRaw}
+              onChange={(e) => setTipsRaw(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 resize-none"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-3 pt-2">
+          <button
+            onClick={onClose}
+            className="flex-1 bg-slate-800 p-3 rounded-2xl text-xs font-bold"
+          >
+            Annuleren
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !name.trim() || !reps.trim() || !focus.trim()}
+            className="flex-1 bg-blue-600 p-3 rounded-2xl text-xs font-bold disabled:opacity-40"
+          >
+            {saving ? 'Opslaan…' : 'Opslaan'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main App ───────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [selectedWorkout, setSelectedWorkout] = useState<string | null>(
-    () => localStorage.getItem('activeWorkout'),
-  );
-  const [completedSets, setCompletedSets] = useState<CompletedSets>(
-    () => loadStorage<CompletedSets>('completedSets', {}),
-  );
-  const [exerciseWeights, setExerciseWeights] = useState<ExerciseWeights>(
-    () => loadStorage<ExerciseWeights>('exerciseWeights', {}),
-  );
-  const [savedWeights, setSavedWeights] = useState<SavedWeights>(
-    () => loadStorage<SavedWeights>('savedWeights', {}),
-  );
-  const [history, setHistory] = useState<WorkoutLog[]>(
-    () => loadStorage<WorkoutLog[]>('workoutHistory', []),
-  );
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [history, setHistory] = useState<WorkoutLog[]>([]);
+  const [dataLoading, setDataLoading] = useState(false);
+
+  const [selectedWorkout, setSelectedWorkout] = useState<string | null>(null);
+  const [completedSets, setCompletedSets] = useState<CompletedSets>({});
+  const [exerciseWeights, setExerciseWeights] = useState<ExerciseWeights>({});
+  const [savedWeights, setSavedWeights] = useState<Record<string, string>>({});
 
   const [expandedExercise, setExpandedExercise] = useState<Exercise | null>(null);
   const [showFinishModal, setShowFinishModal] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
-  const [toast, setToast] = useState('');
+  const [showManage, setShowManage] = useState(false);
+  const [exerciseForm, setExerciseForm] = useState<{ open: boolean; exercise?: Exercise; workoutKey: string }>({
+    open: false, workoutKey: 'A',
+  });
+  const [deleteConfirm, setDeleteConfirm] = useState<Exercise | null>(null);
 
+  const [toast, setToast] = useState('');
   const [timerTime, setTimerTime] = useState(90);
   const [timerActive, setTimerActive] = useState(false);
 
-  // Persist state to localStorage on change
-  useEffect(() => {
-    localStorage.setItem('completedSets', JSON.stringify(completedSets));
-  }, [completedSets]);
+  // ── Auth ────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    localStorage.setItem('exerciseWeights', JSON.stringify(exerciseWeights));
-  }, [exerciseWeights]);
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setAuthLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ── Data loading ────────────────────────────────────────────────────────────
+
+  const loadData = useCallback(async (userId: string) => {
+    setDataLoading(true);
+    const [exRes, logRes] = await Promise.all([
+      supabase.from('exercises').select('*').eq('user_id', userId).order('sort_order'),
+      supabase.from('workout_logs').select(`
+        id, workout_title, created_at,
+        log_exercises ( exercise_name, sort_order, log_sets ( set_number, weight, completed ) )
+      `).eq('user_id', userId).order('created_at', { ascending: false }).limit(20),
+    ]);
+    if (exRes.data) setExercises(exRes.data as Exercise[]);
+    if (logRes.data) setHistory(logRes.data as WorkoutLog[]);
+    setDataLoading(false);
+  }, []);
+
+  // Seed default exercises for brand-new users
+  const seedDefaults = useCallback(async (userId: string) => {
+    const rows = DEFAULT_EXERCISES.map((ex, i) => ({ ...ex, user_id: userId, sort_order: i }));
+    const { data } = await supabase.from('exercises').insert(rows).select();
+    if (data) setExercises(data as Exercise[]);
+  }, []);
 
   useEffect(() => {
-    localStorage.setItem('savedWeights', JSON.stringify(savedWeights));
-  }, [savedWeights]);
+    if (!session) return;
+    loadData(session.user.id).then(() => {
+      // After load, if no exercises exist seed defaults
+      supabase
+        .from('exercises')
+        .select('id')
+        .eq('user_id', session.user.id)
+        .limit(1)
+        .then(({ data }) => {
+          if (data && data.length === 0) seedDefaults(session.user.id);
+        });
+    });
+  }, [session, loadData, seedDefaults]);
 
-  useEffect(() => {
-    localStorage.setItem('workoutHistory', JSON.stringify(history));
-  }, [history]);
+  // ── Timer ───────────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    if (selectedWorkout) {
-      localStorage.setItem('activeWorkout', selectedWorkout);
-    } else {
-      localStorage.removeItem('activeWorkout');
-    }
-  }, [selectedWorkout]);
-
-  // Countdown timer
   useEffect(() => {
     if (!timerActive) return;
     if (timerTime <= 0) {
@@ -371,7 +494,6 @@ export default function App() {
     }
     const id = setInterval(() => setTimerTime((t) => t - 1), 1000);
     return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timerActive, timerTime]);
 
   function triggerToast(msg: string) {
@@ -379,17 +501,21 @@ export default function App() {
     setTimeout(() => setToast(''), 3500);
   }
 
+  // ── Workout helpers ─────────────────────────────────────────────────────────
+
+  function workoutExercises(key: string) {
+    return exercises.filter((e) => e.workout_key === key);
+  }
+
   function getProgress(): number {
     if (!selectedWorkout) return 0;
-    const exercises = workoutData[selectedWorkout].exercises;
-    const total = exercises.reduce((acc, ex) => acc + ex.sets, 0);
-    const done = exercises.reduce((acc, ex) => {
-      for (let i = 0; i < ex.sets; i++) {
-        if (completedSets[`${ex.id}-${i}`]) acc++;
-      }
-      return acc;
+    const exs = workoutExercises(selectedWorkout);
+    const total = exs.reduce((a, e) => a + e.sets, 0);
+    const done = exs.reduce((a, e) => {
+      for (let i = 0; i < e.sets; i++) if (completedSets[`${e.id}-${i}`]) a++;
+      return a;
     }, 0);
-    return Math.round((done / total) * 100);
+    return total === 0 ? 0 : Math.round((done / total) * 100);
   }
 
   function toggleSet(exerciseId: string, setIndex: number) {
@@ -405,67 +531,64 @@ export default function App() {
 
   function handleWeightChange(exerciseId: string, setIndex: number, value: string) {
     setExerciseWeights((prev) => {
-      const prevExercise = prev[exerciseId] ?? {};
-      const prevFirstWeight = prevExercise['0'] ?? '';
-      const updated: Record<string, string> = { ...prevExercise, [setIndex.toString()]: value };
-
-      // Auto-fill subsequent sets when editing set 1
+      const prevEx = prev[exerciseId] ?? {};
+      const prevFirst = prevEx['0'] ?? '';
+      const updated = { ...prevEx, [setIndex.toString()]: value };
       if (setIndex === 0) {
-        for (let i = 1; i < 3; i++) {
-          const cur = prevExercise[i.toString()] ?? '';
-          if (cur === '' || cur === prevFirstWeight) {
-            updated[i.toString()] = value;
-          }
+        for (let i = 1; i < 10; i++) {
+          const cur = prevEx[i.toString()] ?? '';
+          if (cur === '' || cur === prevFirst) updated[i.toString()] = value;
         }
       }
       return { ...prev, [exerciseId]: updated };
     });
-
-    if (setIndex === 0) {
-      setSavedWeights((prev) => ({ ...prev, [exerciseId]: value }));
-    }
+    if (setIndex === 0) setSavedWeights((p) => ({ ...p, [exerciseId]: value }));
   }
 
   function getWeightForSet(exerciseId: string, setIndex: number): string {
     return exerciseWeights[exerciseId]?.[setIndex.toString()] ?? savedWeights[exerciseId] ?? '';
   }
 
-  function finishWorkout() {
-    if (!selectedWorkout) return;
-    const plan = workoutData[selectedWorkout];
+  // ── Finish workout ──────────────────────────────────────────────────────────
 
-    const log: WorkoutLog = {
-      id: crypto.randomUUID(),
-      date: new Date().toLocaleDateString('nl-NL', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-      workoutTitle: plan.title,
-      exercises: plan.exercises.map((ex) => ({
-        name: ex.name,
-        sets: Array.from({ length: ex.sets }, (_v, i) => ({
-          set: i + 1,
-          weight: exerciseWeights[ex.id]?.[i.toString()] ?? savedWeights[ex.id] ?? '0',
-          completed: !!completedSets[`${ex.id}-${i}`],
-        })),
+  async function finishWorkout() {
+    if (!selectedWorkout || !session) return;
+    const exs = workoutExercises(selectedWorkout);
+    const title = selectedWorkout === 'A' ? 'Training A' : selectedWorkout === 'B' ? 'Training B' : `Training ${selectedWorkout}`;
+
+    const { data: logData, error } = await supabase
+      .from('workout_logs')
+      .insert({ user_id: session.user.id, workout_title: title })
+      .select('id')
+      .single();
+    if (error || !logData) { triggerToast('Fout bij opslaan.'); return; }
+
+    const logExercises = exs.map((ex, idx) => ({
+      exercise_name: ex.name,
+      sort_order: idx,
+      sets: Array.from({ length: ex.sets }, (_v, i) => ({
+        set_number: i + 1,
+        weight: exerciseWeights[ex.id]?.[i.toString()] ?? savedWeights[ex.id] ?? '0',
+        completed: !!completedSets[`${ex.id}-${i}`],
       })),
-    };
+    }));
 
-    setHistory((prev) => [log, ...prev]);
+    for (const le of logExercises) {
+      const { data: leData } = await supabase
+        .from('log_exercises')
+        .insert({ log_id: logData.id, exercise_name: le.exercise_name, sort_order: le.sort_order })
+        .select('id')
+        .single();
+      if (leData) {
+        await supabase.from('log_sets').insert(
+          le.sets.map((s) => ({ log_exercise_id: leData.id, ...s }))
+        );
+      }
+    }
 
-    // Clear active session weights for this workout, keep other workouts' weights
-    setExerciseWeights((prev) => {
-      const cleared = { ...prev };
-      plan.exercises.forEach((ex) => {
-        cleared[ex.id] = { '0': '', '1': '', '2': '' };
-      });
-      return cleared;
-    });
-
+    await loadData(session.user.id);
     setCompletedSets({});
+    setExerciseWeights({});
     setSelectedWorkout(null);
     setExpandedExercise(null);
     setTimerActive(false);
@@ -473,60 +596,231 @@ export default function App() {
     triggerToast('Training succesvol opgeslagen!');
   }
 
-  function clearHistory() {
+  // ── Clear history ───────────────────────────────────────────────────────────
+
+  async function clearHistory() {
+    if (!session) return;
+    await supabase.from('workout_logs').delete().eq('user_id', session.user.id);
     setHistory([]);
     setShowClearModal(false);
     triggerToast('Geschiedenis gewist.');
   }
 
-  const progress = getProgress();
+  // ── Exercise CRUD ───────────────────────────────────────────────────────────
 
-  // ── Home Screen ─────────────────────────────────────────────────────────────
+  async function saveExercise(ex: Partial<Exercise>) {
+    if (!session) return;
+    if (exerciseForm.exercise) {
+      // Update
+      const { data } = await supabase
+        .from('exercises')
+        .update(ex)
+        .eq('id', exerciseForm.exercise.id)
+        .select()
+        .single();
+      if (data) setExercises((prev) => prev.map((e) => (e.id === data.id ? data as Exercise : e)));
+    } else {
+      // Insert
+      const sortOrder = exercises.filter((e) => e.workout_key === ex.workout_key).length;
+      const { data } = await supabase
+        .from('exercises')
+        .insert({ ...ex, user_id: session.user.id, sort_order: sortOrder })
+        .select()
+        .single();
+      if (data) setExercises((prev) => [...prev, data as Exercise]);
+    }
+  }
+
+  async function deleteExercise(ex: Exercise) {
+    await supabase.from('exercises').delete().eq('id', ex.id);
+    setExercises((prev) => prev.filter((e) => e.id !== ex.id));
+    setDeleteConfirm(null);
+    triggerToast(`${ex.name} verwijderd.`);
+  }
+
+  // ── Render: loading / auth ──────────────────────────────────────────────────
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <Dumbbell className="text-blue-500 w-10 h-10 animate-pulse" />
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <AuthScreen onAuth={() => {}} />;
+  }
+
+  // ── Render: manage exercises ────────────────────────────────────────────────
+
+  if (showManage) {
+    const keys = [...new Set(exercises.map((e) => e.workout_key))].sort();
+    return (
+      <div className="min-h-screen bg-slate-950 text-white pb-8 font-sans">
+        <div className="sticky top-0 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-4 py-4 z-20 flex items-center justify-between">
+          <button
+            onClick={() => setShowManage(false)}
+            className="p-3 rounded-2xl bg-slate-800"
+          >
+            <ChevronLeft size={24} />
+          </button>
+          <h1 className="text-xl font-black">Oefeningen beheren</h1>
+          <div className="w-12" />
+        </div>
+
+        <div className="max-w-md mx-auto p-4 space-y-6">
+          {['A', 'B', ...keys.filter((k) => k !== 'A' && k !== 'B')].map((key) => (
+            <div key={key}>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-base font-black text-slate-300">Training {key}</h2>
+                <button
+                  onClick={() => setExerciseForm({ open: true, workoutKey: key })}
+                  className="flex items-center gap-1.5 text-xs font-bold text-blue-400 bg-blue-950/40 px-3 py-1.5 rounded-xl border border-blue-500/20"
+                >
+                  <Plus size={14} /> Toevoegen
+                </button>
+              </div>
+              <div className="space-y-2">
+                {exercises.filter((e) => e.workout_key === key).map((ex) => (
+                  <div key={ex.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-3 flex items-center justify-between">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-sm truncate">{ex.name}</p>
+                      <p className="text-xs text-slate-400">{ex.reps} · {ex.sets} sets</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 ml-3">
+                      <button
+                        onClick={() => setExerciseForm({ open: true, exercise: ex, workoutKey: ex.workout_key })}
+                        className="p-2 bg-slate-800 rounded-xl"
+                      >
+                        <Pencil size={15} className="text-slate-300" />
+                      </button>
+                      <button
+                        onClick={() => setDeleteConfirm(ex)}
+                        className="p-2 bg-rose-950/30 rounded-xl border border-rose-500/10"
+                      >
+                        <Trash2 size={15} className="text-rose-400" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {exercises.filter((e) => e.workout_key === key).length === 0 && (
+                  <p className="text-xs text-slate-500 py-2 pl-1">Geen oefeningen. Voeg er een toe.</p>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {/* Add exercises for a new training key */}
+          <button
+            onClick={() => {
+              const key = prompt('Letter voor nieuw schema (bijv. C):')?.toUpperCase().trim();
+              if (key && /^[A-Z]$/.test(key)) setExerciseForm({ open: true, workoutKey: key });
+            }}
+            className="w-full border border-dashed border-slate-700 text-slate-400 text-xs font-bold py-3 rounded-2xl flex items-center justify-center gap-2"
+          >
+            <Plus size={14} /> Nieuw trainingsschema
+          </button>
+        </div>
+
+        {exerciseForm.open && (
+          <ExerciseForm
+            exercise={exerciseForm.exercise}
+            workoutKey={exerciseForm.workoutKey}
+            onSave={saveExercise}
+            onClose={() => setExerciseForm({ open: false, workoutKey: 'A' })}
+          />
+        )}
+
+        {deleteConfirm && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl max-w-sm w-full space-y-4">
+              <h3 className="text-lg font-black">Oefening verwijderen?</h3>
+              <p className="text-sm text-slate-400">
+                <strong className="text-white">{deleteConfirm.name}</strong> wordt permanent verwijderd.
+              </p>
+              <div className="flex gap-3">
+                <button onClick={() => setDeleteConfirm(null)} className="flex-1 bg-slate-800 p-3 rounded-2xl text-xs font-bold">
+                  Annuleren
+                </button>
+                <button onClick={() => deleteExercise(deleteConfirm)} className="flex-1 bg-rose-600 p-3 rounded-2xl text-xs font-bold text-white">
+                  Verwijderen
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {toast && <Toast message={toast} />}
+      </div>
+    );
+  }
+
+  // ── Render: home ────────────────────────────────────────────────────────────
 
   if (!selectedWorkout) {
+    const workoutKeys = [...new Set(exercises.map((e) => e.workout_key))].sort();
+    const colors = ['bg-blue-600 border-blue-400/20', 'bg-emerald-600 border-emerald-400/20', 'bg-purple-600 border-purple-400/20', 'bg-orange-600 border-orange-400/20'];
+
     return (
       <div className="min-h-screen bg-slate-950 text-white p-6 font-sans">
         <div className="max-w-md mx-auto w-full space-y-8 py-4">
 
           {/* Header */}
-          <div className="flex items-center gap-3">
-            <div className="bg-blue-600/20 p-3 rounded-2xl">
-              <Dumbbell className="text-blue-500 w-8 h-8" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-600/20 p-3 rounded-2xl">
+                <Dumbbell className="text-blue-500 w-8 h-8" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-black tracking-tight">Gym Tracker</h1>
+                <p className="text-xs text-slate-400 flex items-center gap-1">
+                  <User size={10} /> {session.user.email}
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl font-black tracking-tight">Gym Tracker</h1>
-              <p className="text-xs text-slate-400">Jouw progressie, altijd bewaard</p>
-            </div>
+            <button
+              onClick={() => supabase.auth.signOut()}
+              className="p-2.5 bg-slate-900 border border-slate-800 rounded-2xl text-slate-400"
+              title="Uitloggen"
+            >
+              <LogOut size={18} />
+            </button>
           </div>
 
           {/* Start Training */}
           <div>
-            <h2 className="text-lg font-black mb-3 flex items-center gap-2">
-              <Target size={18} className="text-blue-500" />
-              Start nieuwe training
-            </h2>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-black flex items-center gap-2">
+                <Target size={18} className="text-blue-500" />
+                Start nieuwe training
+              </h2>
               <button
-                onClick={() => setSelectedWorkout('A')}
-                className="bg-blue-600 active:bg-blue-700 p-5 rounded-3xl text-left shadow-lg transition-transform active:scale-95 flex flex-col justify-between h-36 border border-blue-400/20"
+                onClick={() => setShowManage(true)}
+                className="flex items-center gap-1.5 text-xs font-bold text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl"
               >
-                <Dumbbell size={28} className="text-white" />
-                <div>
-                  <div className="text-xl font-black">Training A</div>
-                  <div className="text-xs text-blue-200">Focus op Quads en Borst</div>
-                </div>
-              </button>
-              <button
-                onClick={() => setSelectedWorkout('B')}
-                className="bg-emerald-600 active:bg-emerald-700 p-5 rounded-3xl text-left shadow-lg transition-transform active:scale-95 flex flex-col justify-between h-36 border border-emerald-400/20"
-              >
-                <Target size={28} className="text-white" />
-                <div>
-                  <div className="text-xl font-black">Training B</div>
-                  <div className="text-xs text-emerald-200">Focus op Posterior Chain</div>
-                </div>
+                <Pencil size={13} /> Beheren
               </button>
             </div>
+            {dataLoading ? (
+              <div className="h-36 bg-slate-900 rounded-3xl animate-pulse" />
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                {workoutKeys.map((key, idx) => (
+                  <button
+                    key={key}
+                    onClick={() => setSelectedWorkout(key)}
+                    className={`${colors[idx % colors.length]} active:opacity-80 p-5 rounded-3xl text-left shadow-lg transition-transform active:scale-95 flex flex-col justify-between h-36 border`}
+                  >
+                    <Dumbbell size={28} className="text-white" />
+                    <div>
+                      <div className="text-xl font-black">Training {key}</div>
+                      <div className="text-xs text-white/70">{workoutExercises(key).length} oefeningen</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* History */}
@@ -539,14 +833,12 @@ export default function App() {
               {history.length > 0 && (
                 <button
                   onClick={() => setShowClearModal(true)}
-                  className="text-xs text-rose-500 font-bold flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-rose-950/20 border border-rose-500/10 active:scale-95 transition-transform"
+                  className="text-xs text-rose-500 font-bold flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-rose-950/20 border border-rose-500/10"
                 >
-                  <Trash2 size={13} />
-                  Wis Logboek
+                  <Trash2 size={13} /> Wis Logboek
                 </button>
               )}
             </div>
-
             {history.length === 0 ? (
               <div className="bg-slate-900/40 border border-slate-900 rounded-3xl p-8 text-center text-slate-500 text-sm">
                 Nog geen afgeronde trainingen. Voltooi een training om je logboek op te bouwen.
@@ -556,21 +848,17 @@ export default function App() {
                 {history.map((log) => (
                   <div key={log.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
                     <div className="flex justify-between items-start mb-2">
-                      <span className="font-black text-sm text-blue-400">{log.workoutTitle}</span>
-                      <span className="text-[10px] text-slate-500 font-medium">{log.date}</span>
+                      <span className="font-black text-sm text-blue-400">{log.workout_title}</span>
+                      <span className="text-[10px] text-slate-500 font-medium">
+                        {new Date(log.created_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })}
+                      </span>
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-xs">
-                      {log.exercises.map((ex, idx) => {
-                        const best = ex.sets.reduce(
-                          (max, s) => Math.max(max, parseFloat(s.weight) || 0),
-                          0,
-                        );
+                      {log.log_exercises?.map((le, idx) => {
+                        const best = le.log_sets?.reduce((max, s) => Math.max(max, parseFloat(s.weight) || 0), 0) ?? 0;
                         return (
-                          <div
-                            key={idx}
-                            className="flex justify-between bg-slate-950/50 p-1.5 rounded-lg border border-slate-800/50"
-                          >
-                            <span className="truncate mr-1 text-slate-400">{ex.name}</span>
+                          <div key={idx} className="flex justify-between bg-slate-950/50 p-1.5 rounded-lg border border-slate-800/50">
+                            <span className="truncate mr-1 text-slate-400">{le.exercise_name}</span>
                             <span className="font-bold text-white shrink-0">{best} kg</span>
                           </div>
                         );
@@ -583,25 +871,18 @@ export default function App() {
           </div>
         </div>
 
-        {/* Clear History Modal */}
         {showClearModal && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-6">
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl max-w-sm w-full space-y-4">
               <h3 className="text-lg font-black">Weet je het zeker?</h3>
               <p className="text-sm text-slate-400">
-                Hiermee wis je al je opgeslagen trainingen definitief. Dit kan niet ongedaan worden gemaakt.
+                Hiermee wis je al je opgeslagen trainingen definitief.
               </p>
               <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setShowClearModal(false)}
-                  className="flex-1 bg-slate-800 hover:bg-slate-700 p-3 rounded-2xl text-xs font-bold transition-transform active:scale-95"
-                >
+                <button onClick={() => setShowClearModal(false)} className="flex-1 bg-slate-800 p-3 rounded-2xl text-xs font-bold">
                   Annuleren
                 </button>
-                <button
-                  onClick={clearHistory}
-                  className="flex-1 bg-rose-600 hover:bg-rose-500 p-3 rounded-2xl text-xs font-bold text-white transition-transform active:scale-95"
-                >
+                <button onClick={clearHistory} className="flex-1 bg-rose-600 p-3 rounded-2xl text-xs font-bold text-white">
                   Definitief Wissen
                 </button>
               </div>
@@ -614,28 +895,24 @@ export default function App() {
     );
   }
 
-  // ── Workout Screen ──────────────────────────────────────────────────────────
+  // ── Render: workout screen ──────────────────────────────────────────────────
 
-  const workout = workoutData[selectedWorkout];
+  const exs = workoutExercises(selectedWorkout);
+  const progress = getProgress();
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-36 font-sans">
 
-      {/* Sticky Header */}
       <div className="sticky top-0 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-4 py-4 z-20 flex items-center justify-between">
-        <button
-          onClick={() => setSelectedWorkout(null)}
-          className="p-3 rounded-2xl bg-slate-800 active:bg-slate-700"
-        >
+        <button onClick={() => setSelectedWorkout(null)} className="p-3 rounded-2xl bg-slate-800">
           <ChevronLeft size={24} className="text-white" />
         </button>
-        <h1 className="text-xl font-black text-white">{workout.title}</h1>
+        <h1 className="text-xl font-black text-white">Training {selectedWorkout}</h1>
         <div className="px-3 py-1 bg-blue-900/50 border border-blue-500/30 rounded-full font-black text-blue-400 text-sm">
           {progress}% Klaar
         </div>
       </div>
 
-      {/* Progress Bar */}
       <div className="w-full bg-slate-800 h-2">
         <div
           className="bg-gradient-to-r from-blue-500 to-emerald-500 h-2 transition-all duration-300"
@@ -643,22 +920,19 @@ export default function App() {
         />
       </div>
 
-      {/* Muscle Map (shown when an exercise is expanded) */}
       {expandedExercise && (
         <div className="bg-slate-900 p-4 border-b border-slate-800">
           <div className="max-w-md mx-auto">
             <p className="text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider text-center">
-              Actieve spierzone:{' '}
-              <span className="text-orange-400">{expandedExercise.name}</span>
+              Actieve spierzone: <span className="text-orange-400">{expandedExercise.name}</span>
             </p>
-            <MuscleMap highlight={expandedExercise.muscleGroup} />
+            <MuscleMap highlight={expandedExercise.muscle_group} />
           </div>
         </div>
       )}
 
-      {/* Exercise List */}
       <div className="max-w-md mx-auto p-4 space-y-4">
-        {workout.exercises.map((exercise) => {
+        {exs.map((exercise) => {
           const isExpanded = expandedExercise?.id === exercise.id;
           const setsCompleted = Array.from({ length: exercise.sets }, (_v, i) =>
             completedSets[`${exercise.id}-${i}`],
@@ -676,7 +950,6 @@ export default function App() {
                   : 'border-slate-800 bg-slate-900/60'
               }`}
             >
-              {/* Card Header — tap to expand */}
               <div
                 onClick={() => setExpandedExercise(isExpanded ? null : exercise)}
                 className="p-4 flex justify-between items-center cursor-pointer select-none"
@@ -691,62 +964,51 @@ export default function App() {
                   <span className="text-sm font-bold text-blue-400 bg-blue-950/80 px-2.5 py-1 rounded-xl">
                     {exercise.reps}
                   </span>
-                  {isExpanded ? (
-                    <ChevronUp size={20} className="text-slate-400" />
-                  ) : (
-                    <ChevronDown size={20} className="text-slate-400" />
-                  )}
+                  {isExpanded ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
                 </div>
               </div>
 
-              {/* Expanded: image + tips */}
               {isExpanded && (
                 <div className="border-t border-slate-800 p-4 space-y-4">
-                  <div className="relative w-full h-48 rounded-2xl overflow-hidden bg-slate-800">
-                    <img
-                      src={exercise.image}
-                      alt={exercise.name}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src =
-                          'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=600&q=80';
-                      }}
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent" />
-                  </div>
-                  <div className="bg-slate-950/60 p-3.5 rounded-2xl border border-slate-800/80">
-                    <ul className="space-y-1.5 text-sm text-slate-300">
-                      {exercise.tips.map((tip, idx) => (
-                        <li key={idx} className="flex items-start gap-2">
-                          <span className="text-blue-500 font-bold shrink-0">•</span>
-                          <span>{tip}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                  {exercise.image && (
+                    <div className="relative w-full h-48 rounded-2xl overflow-hidden bg-slate-800">
+                      <img
+                        src={exercise.image}
+                        alt={exercise.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent" />
+                    </div>
+                  )}
+                  {exercise.tips.length > 0 && (
+                    <div className="bg-slate-950/60 p-3.5 rounded-2xl border border-slate-800/80">
+                      <ul className="space-y-1.5 text-sm text-slate-300">
+                        {exercise.tips.map((tip, idx) => (
+                          <li key={idx} className="flex items-start gap-2">
+                            <span className="text-blue-500 font-bold shrink-0">•</span>
+                            <span>{tip}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* Sets row */}
               <div className="p-4 border-t border-slate-800/60 space-y-2">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                  Huidige Sets
-                </p>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Huidige Sets</p>
                 {Array.from({ length: exercise.sets }, (_v, i) => {
                   const isChecked = !!completedSets[`${exercise.id}-${i}`];
                   return (
                     <div
                       key={i}
                       className={`flex items-center justify-between p-3 rounded-2xl border transition-colors ${
-                        isChecked
-                          ? 'bg-emerald-950/30 border-emerald-500/30'
-                          : 'bg-slate-900/80 border-slate-800'
+                        isChecked ? 'bg-emerald-950/30 border-emerald-500/30' : 'bg-slate-900/80 border-slate-800'
                       }`}
                     >
                       <div className="flex items-center gap-4">
-                        <span className="text-sm font-black text-slate-400 w-12">
-                          Set {i + 1}
-                        </span>
+                        <span className="text-sm font-black text-slate-400 w-12">Set {i + 1}</span>
                         <div className="flex items-center bg-slate-950 border border-slate-700/80 rounded-xl px-2.5 py-1 focus-within:border-blue-500 transition-colors w-24">
                           <input
                             type="number"
@@ -764,11 +1026,9 @@ export default function App() {
                         className="p-1.5 active:scale-90 transition-transform"
                         aria-label={isChecked ? 'Set verwijderen' : 'Set voltooien'}
                       >
-                        {isChecked ? (
-                          <CheckCircle2 size={32} className="text-emerald-500" />
-                        ) : (
-                          <Circle size={32} className="text-slate-600" />
-                        )}
+                        {isChecked
+                          ? <CheckCircle2 size={32} className="text-emerald-500" />
+                          : <Circle size={32} className="text-slate-600" />}
                       </button>
                     </div>
                   );
@@ -778,7 +1038,6 @@ export default function App() {
           );
         })}
 
-        {/* Finish Button */}
         <div className="pt-4">
           <button
             onClick={() => setShowFinishModal(true)}
@@ -793,69 +1052,39 @@ export default function App() {
       {/* Floating Rest Timer */}
       <div className="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 p-4 z-30 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="bg-slate-800 p-2.5 rounded-2xl text-blue-400">
-            <Timer size={24} />
-          </div>
+          <div className="bg-slate-800 p-2.5 rounded-2xl text-blue-400"><Timer size={24} /></div>
           <div>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">RUSTTIMER</p>
-            <p className="text-2xl font-black tracking-tight tabular-nums text-white">
-              {formatTime(timerTime)}
-            </p>
+            <p className="text-2xl font-black tracking-tight tabular-nums text-white">{formatTime(timerTime)}</p>
           </div>
         </div>
-
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => { setTimerTime(60); setTimerActive(true); }}
-            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-xl"
-          >
-            1 min
-          </button>
-          <button
-            onClick={() => { setTimerTime(90); setTimerActive(true); }}
-            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-xl"
-          >
-            1.5 min
-          </button>
+          <button onClick={() => { setTimerTime(60); setTimerActive(true); }} className="px-3 py-2 bg-slate-800 text-xs font-bold rounded-xl">1 min</button>
+          <button onClick={() => { setTimerTime(90); setTimerActive(true); }} className="px-3 py-2 bg-slate-800 text-xs font-bold rounded-xl">1.5 min</button>
           <button
             onClick={() => setTimerActive((a) => !a)}
-            className={`p-3 rounded-2xl active:scale-95 transition-all text-white ${
-              timerActive ? 'bg-amber-600' : 'bg-blue-600'
-            }`}
-            aria-label={timerActive ? 'Pauzeer timer' : 'Start timer'}
+            className={`p-3 rounded-2xl active:scale-95 transition-all text-white ${timerActive ? 'bg-amber-600' : 'bg-blue-600'}`}
           >
             {timerActive ? <Pause size={20} /> : <Play size={20} />}
           </button>
-          <button
-            onClick={() => { setTimerTime(90); setTimerActive(false); }}
-            className="p-3 bg-slate-800 text-slate-300 rounded-2xl active:scale-95"
-            aria-label="Reset timer"
-          >
+          <button onClick={() => { setTimerTime(90); setTimerActive(false); }} className="p-3 bg-slate-800 text-slate-300 rounded-2xl">
             <RotateCcw size={20} />
           </button>
         </div>
       </div>
 
-      {/* Finish Workout Modal */}
       {showFinishModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-6">
           <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl max-w-sm w-full space-y-4">
             <h3 className="text-lg font-black text-white">Workout afronden?</h3>
             <p className="text-sm text-slate-400">
-              Je gewichten en voltooide sets worden opgeslagen in je trainingsgeschiedenis. De sessie
-              wordt daarna gereset voor de volgende keer.
+              Je gewichten en voltooide sets worden opgeslagen in je trainingsgeschiedenis.
             </p>
             <div className="flex gap-3 pt-2">
-              <button
-                onClick={() => setShowFinishModal(false)}
-                className="flex-1 bg-slate-800 hover:bg-slate-700 p-3 rounded-2xl text-xs font-bold transition-transform active:scale-95"
-              >
+              <button onClick={() => setShowFinishModal(false)} className="flex-1 bg-slate-800 p-3 rounded-2xl text-xs font-bold">
                 Doorgaan
               </button>
-              <button
-                onClick={finishWorkout}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-500 p-3 rounded-2xl text-xs font-bold text-white transition-transform active:scale-95"
-              >
+              <button onClick={finishWorkout} className="flex-1 bg-emerald-600 p-3 rounded-2xl text-xs font-bold text-white">
                 Opslaan & Klaar
               </button>
             </div>
@@ -864,19 +1093,6 @@ export default function App() {
       )}
 
       {toast && <Toast message={toast} />}
-    </div>
-  );
-}
-
-// ── Toast ─────────────────────────────────────────────────────────────────────
-
-function Toast({ message }: { message: string }) {
-  return (
-    <div className="fixed top-6 left-4 right-4 z-50 bg-slate-900 border border-slate-700 px-4 py-3 rounded-2xl shadow-xl flex items-center gap-3 animate-slide-in">
-      <div className="p-1 bg-blue-500/10 rounded-lg shrink-0">
-        <Check className="text-blue-400 w-5 h-5" />
-      </div>
-      <span className="text-xs font-bold text-white">{message}</span>
     </div>
   );
 }
