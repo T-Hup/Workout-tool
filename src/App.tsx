@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   ChevronLeft, Dumbbell, Timer, Target, CheckCircle2, Circle,
   Play, Pause, RotateCcw, ChevronDown, ChevronUp, Calendar,
-  Check, Trash2, Award, Plus, Pencil, X, LogOut, User, Key,
+  Check, Trash2, Award, Plus, Pencil, X, LogOut, User,
 } from 'lucide-react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './supabaseClient';
@@ -434,10 +434,12 @@ export default function App() {
   // ── Auth ────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setAuthLoading(false);
-    });
+    supabase.auth.getSession()
+      .then(({ data }) => {
+        setSession(data.session);
+        setAuthLoading(false);
+      })
+      .catch(() => setAuthLoading(false));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
@@ -594,15 +596,6 @@ export default function App() {
     setTimerActive(false);
     setShowFinishModal(false);
     triggerToast('Training succesvol opgeslagen!');
-  }
-
-  // ── API key ─────────────────────────────────────────────────────────────────
-
-  async function copyApiKey() {
-    const { data, error } = await supabase.rpc('get_or_create_api_key');
-    if (error || !data) { triggerToast('Kon API key niet ophalen.'); return; }
-    await navigator.clipboard.writeText(data);
-    triggerToast('API key gekopieerd! Gebruik hem in Claude Code als MCP key.');
   }
 
   // ── Clear history ───────────────────────────────────────────────────────────
@@ -788,22 +781,13 @@ export default function App() {
                 </p>
               </div>
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={copyApiKey}
-                className="p-2.5 bg-slate-900 border border-slate-800 rounded-2xl text-slate-400"
-                title="Kopieer MCP API key"
-              >
-                <Key size={18} />
-              </button>
-              <button
-                onClick={() => supabase.auth.signOut()}
-                className="p-2.5 bg-slate-900 border border-slate-800 rounded-2xl text-slate-400"
-                title="Uitloggen"
-              >
-                <LogOut size={18} />
-              </button>
-            </div>
+            <button
+              onClick={() => supabase.auth.signOut()}
+              className="p-2.5 bg-slate-900 border border-slate-800 rounded-2xl text-slate-400"
+              title="Uitloggen"
+            >
+              <LogOut size={18} />
+            </button>
           </div>
 
           {/* Start Training */}
