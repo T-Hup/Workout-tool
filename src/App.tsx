@@ -3,6 +3,7 @@ import {
   ChevronLeft, Dumbbell, Timer, Target, CheckCircle2, Circle,
   Play, Pause, RotateCcw, ChevronDown, ChevronUp, Calendar,
   Check, Trash2, Award, Plus, Pencil, X, LogOut, User,
+  Bot, Copy, Terminal,
 } from 'lucide-react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './supabaseClient';
@@ -422,6 +423,10 @@ export default function App() {
   const [showFinishModal, setShowFinishModal] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
   const [showManage, setShowManage] = useState(false);
+  const [showMcpGuide, setShowMcpGuide] = useState(false);
+  const [mcpApiKey, setMcpApiKey] = useState<string | null>(null);
+  const [mcpKeyLoading, setMcpKeyLoading] = useState(false);
+  const [mcpCopied, setMcpCopied] = useState<string | null>(null);
   const [exerciseForm, setExerciseForm] = useState<{ open: boolean; exercise?: Exercise; workoutKey: string }>({
     open: false, workoutKey: 'A',
   });
@@ -608,6 +613,23 @@ export default function App() {
     triggerToast('Geschiedenis gewist.');
   }
 
+  // ── MCP API key ─────────────────────────────────────────────────────────────
+
+  async function fetchMcpApiKey() {
+    if (mcpApiKey) return;
+    setMcpKeyLoading(true);
+    const { data, error } = await supabase.rpc('get_or_create_api_key');
+    if (!error && data) setMcpApiKey(data as string);
+    setMcpKeyLoading(false);
+  }
+
+  function copyText(text: string, label: string) {
+    navigator.clipboard.writeText(text).then(() => {
+      setMcpCopied(label);
+      setTimeout(() => setMcpCopied(null), 2000);
+    });
+  }
+
   // ── Exercise CRUD ───────────────────────────────────────────────────────────
 
   async function saveExercise(ex: Partial<Exercise>) {
@@ -758,6 +780,166 @@ export default function App() {
     );
   }
 
+  // ── Render: MCP guide ──────────────────────────────────────────────────────
+
+  if (showMcpGuide) {
+    const mcpUrl = mcpApiKey
+      ? `https://bzfdisecqlkfqujvkyvi.supabase.co/functions/v1/workout-mcp?key=${mcpApiKey}`
+      : null;
+    const cliCommand = mcpUrl
+      ? `claude mcp add --scope user --transport http gym-tracker "${mcpUrl}"`
+      : null;
+
+    return (
+      <div className="min-h-screen bg-slate-950 text-white pb-8 font-sans">
+        <div className="sticky top-0 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-4 py-4 z-20 flex items-center justify-between">
+          <button onClick={() => setShowMcpGuide(false)} className="p-3 rounded-2xl bg-slate-800">
+            <ChevronLeft size={24} />
+          </button>
+          <h1 className="text-xl font-black">Koppelen met Claude</h1>
+          <div className="w-12" />
+        </div>
+
+        <div className="max-w-md mx-auto p-4 space-y-6">
+
+          {/* Intro */}
+          <div className="bg-blue-950/30 border border-blue-500/20 rounded-3xl p-5 space-y-2">
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-600/20 p-2.5 rounded-2xl">
+                <Bot className="text-blue-400 w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="font-black text-base">Claude MCP</h2>
+                <p className="text-xs text-slate-400">Laat Claude je trainingsdata lezen en beheren</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Via MCP (Model Context Protocol) kan Claude rechtstreeks met jouw gym data praten.
+              Je kunt vragen stellen als <em className="text-blue-300">"wat zijn mijn persoonlijke records?"</em> of
+              <em className="text-blue-300"> "stel een nieuw schema in"</em>.
+            </p>
+          </div>
+
+          {/* Step 1 - Get API key */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-black text-slate-300 flex items-center gap-2">
+              <span className="bg-blue-600 text-white text-xs font-black w-6 h-6 rounded-full flex items-center justify-center shrink-0">1</span>
+              Jouw persoonlijke MCP-URL
+            </h3>
+
+            {!mcpApiKey && !mcpKeyLoading && (
+              <button
+                onClick={fetchMcpApiKey}
+                className="w-full bg-blue-600 active:bg-blue-700 p-3.5 rounded-2xl font-black text-sm flex items-center justify-center gap-2"
+              >
+                <Bot size={16} /> API-sleutel genereren
+              </button>
+            )}
+
+            {mcpKeyLoading && (
+              <div className="w-full bg-slate-900 border border-slate-800 p-3.5 rounded-2xl text-sm text-slate-400 text-center">
+                Laden…
+              </div>
+            )}
+
+            {mcpUrl && (
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-2">
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">MCP Server URL</p>
+                <p className="text-xs text-slate-300 break-all font-mono leading-relaxed">{mcpUrl}</p>
+                <button
+                  onClick={() => copyText(mcpUrl, 'url')}
+                  className="flex items-center gap-2 text-xs font-bold text-blue-400 mt-1"
+                >
+                  <Copy size={13} />
+                  {mcpCopied === 'url' ? 'Gekopieerd!' : 'Kopieer URL'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Step 2 - Claude Desktop */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-black text-slate-300 flex items-center gap-2">
+              <span className="bg-blue-600 text-white text-xs font-black w-6 h-6 rounded-full flex items-center justify-center shrink-0">2a</span>
+              Claude Desktop app
+            </h3>
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 text-xs text-slate-300">
+              <p>Open <strong className="text-white">Instellingen → Ontwikkelaar → MCP Servers bewerken</strong> en voeg dit toe:</p>
+              <div className="bg-slate-950 rounded-xl p-3 font-mono text-[11px] text-slate-300 leading-relaxed">
+                {`{\n  "mcpServers": {\n    "gym-tracker": {\n      "type": "http",\n      "url": "`}
+                <span className="text-blue-400">{mcpUrl ?? 'JOUW_MCP_URL'}</span>
+                {`"\n    }\n  }\n}`}
+              </div>
+              {mcpUrl && (
+                <button
+                  onClick={() => copyText(
+                    `{\n  "mcpServers": {\n    "gym-tracker": {\n      "type": "http",\n      "url": "${mcpUrl}"\n    }\n  }\n}`,
+                    'desktop'
+                  )}
+                  className="flex items-center gap-2 font-bold text-blue-400"
+                >
+                  <Copy size={13} />
+                  {mcpCopied === 'desktop' ? 'Gekopieerd!' : 'Kopieer config'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Step 2b - Claude Code CLI */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-black text-slate-300 flex items-center gap-2">
+              <span className="bg-blue-600 text-white text-xs font-black w-6 h-6 rounded-full flex items-center justify-center shrink-0">2b</span>
+              Claude Code (CLI)
+            </h3>
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 text-xs text-slate-300">
+              <p>Voer dit commando uit in je terminal:</p>
+              <div className="bg-slate-950 rounded-xl p-3 font-mono text-[11px] text-slate-300 leading-relaxed break-all flex items-start gap-2">
+                <Terminal size={12} className="text-slate-500 mt-0.5 shrink-0" />
+                <span>{cliCommand ?? `claude mcp add --scope user --transport http gym-tracker "JOUW_MCP_URL"`}</span>
+              </div>
+              {cliCommand && (
+                <button
+                  onClick={() => copyText(cliCommand, 'cli')}
+                  className="flex items-center gap-2 font-bold text-blue-400"
+                >
+                  <Copy size={13} />
+                  {mcpCopied === 'cli' ? 'Gekopieerd!' : 'Kopieer commando'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Step 3 - Usage */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-black text-slate-300 flex items-center gap-2">
+              <span className="bg-emerald-600 text-white text-xs font-black w-6 h-6 rounded-full flex items-center justify-center shrink-0">3</span>
+              Wat kun je vragen?
+            </h3>
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
+              {[
+                'Wat zijn mijn persoonlijke records per oefening?',
+                'Maak een nieuw trainingsschema voor me',
+                'Analyseer mijn progressie van de afgelopen maand',
+                'Voeg een nieuwe oefening toe aan Training A',
+                'Verwijder Face Pulls uit mijn schema',
+              ].map((q) => (
+                <div key={q} className="flex items-start gap-2 text-xs text-slate-300">
+                  <span className="text-blue-500 shrink-0 mt-0.5">›</span>
+                  <span className="italic">"{q}"</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Security note */}
+          <div className="bg-amber-950/20 border border-amber-500/20 rounded-2xl p-4 text-xs text-amber-300/80 leading-relaxed">
+            <strong className="text-amber-300">Let op:</strong> Deel je MCP-URL niet met anderen — de sleutel geeft toegang tot jouw trainingsdata.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── Render: home ────────────────────────────────────────────────────────────
 
   if (!selectedWorkout) {
@@ -871,6 +1053,22 @@ export default function App() {
               </div>
             )}
           </div>
+
+          {/* Claude MCP button */}
+          <button
+            onClick={() => { setShowMcpGuide(true); fetchMcpApiKey(); }}
+            className="w-full flex items-center gap-3 bg-slate-900/60 border border-slate-800 p-4 rounded-3xl text-left"
+          >
+            <div className="bg-blue-600/20 p-2.5 rounded-2xl shrink-0">
+              <Bot className="text-blue-400 w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-black text-sm text-white">Koppelen met Claude</p>
+              <p className="text-xs text-slate-400 truncate">Stel vragen over je data via MCP</p>
+            </div>
+            <ChevronLeft size={18} className="text-slate-500 rotate-180 shrink-0 ml-auto" />
+          </button>
+
         </div>
 
         {showClearModal && (
