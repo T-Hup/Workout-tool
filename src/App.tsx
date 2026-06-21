@@ -439,16 +439,22 @@ export default function App() {
   // ── Auth ────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    // Fallback: show auth screen after 5s regardless of network state
+    const timeout = setTimeout(() => setAuthLoading(false), 5000);
     supabase.auth.getSession()
       .then(({ data }) => {
+        clearTimeout(timeout);
         setSession(data.session);
         setAuthLoading(false);
       })
-      .catch(() => setAuthLoading(false));
+      .catch(() => {
+        clearTimeout(timeout);
+        setAuthLoading(false);
+      });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
-    return () => subscription.unsubscribe();
+    return () => { subscription.unsubscribe(); clearTimeout(timeout); };
   }, []);
 
   // ── Data loading ────────────────────────────────────────────────────────────
@@ -666,8 +672,9 @@ export default function App() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-4">
         <Dumbbell className="text-blue-500 w-10 h-10 animate-pulse" />
+        <p className="text-slate-500 text-sm">Laden…</p>
       </div>
     );
   }
