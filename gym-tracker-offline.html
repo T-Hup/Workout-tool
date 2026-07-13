@@ -333,6 +333,15 @@ function renderManage(){
         </div>`).join('') || `<div class="muted" style="padding:8px 4px">Geen oefeningen. Voeg er een toe.</div>`)(wex(k))}
       </div>`).join('')}
       <button data-act="newschema" style="width:100%;border:1px dashed #334155;color:var(--muted2);font-size:12px;font-weight:700;padding:12px;border-radius:16px;display:flex;align-items:center;justify-content:center;gap:8px">${I.plus} Nieuw trainingsschema</button>
+
+      <div style="margin-top:28px;padding-top:20px;border-top:1px solid var(--line)">
+        <div class="h2" style="font-size:15px;color:var(--muted2);margin-bottom:4px">Back-up</div>
+        <div class="muted" style="margin-bottom:12px">Zet je oefeningen en historie over naar een nieuwe versie van de app, of bewaar ze veilig.</div>
+        <div style="display:flex;gap:12px">
+          <button data-act="export" class="btn btn-slate" style="padding:14px;font-size:12px">⬇ Exporteer data</button>
+          <button data-act="import" class="btn btn-slate" style="padding:14px;font-size:12px">⬆ Importeer data</button>
+        </div>
+      </div>
     </div>
   </div>`;
 }
@@ -497,6 +506,8 @@ function handle(act, el){
     case 'resettimer': timerTime=90; stopTimer(); render(); break;
     case 'moveup': moveExercise(id, -1); break;
     case 'movedown': moveExercise(id, 1); break;
+    case 'export': exportData(); break;
+    case 'import': importData(); break;
     case 'addex': modal={type:'form', key:k}; render(); break;
     case 'editex': modal={type:'form', id}; render(); break;
     case 'delex': modal={type:'confirmDel', id}; render(); break;
@@ -505,6 +516,40 @@ function handle(act, el){
     case 'saveform': saveForm(); break;
     case 'closemodal': modal=null; render(); break;
   }
+}
+
+function exportData(){
+  const data = { app:'gym-tracker', version:1, exportedAt:new Date().toISOString(), exercises, history };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'gym-tracker-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+  toast('Back-up gedownload.');
+}
+
+function importData(){
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'application/json,.json';
+  inp.onchange = ()=>{
+    const file = inp.files && inp.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      try {
+        const data = JSON.parse(reader.result);
+        if (!data || !Array.isArray(data.exercises)) { toast('Ongeldig back-upbestand.'); return; }
+        exercises = data.exercises;
+        history = Array.isArray(data.history) ? data.history : [];
+        saveEx(); saveHist();
+        selectedWorkout=null; completedSets={}; weights={}; savedWeights={}; expanded=null; view='manage';
+        render(); toast('Data geïmporteerd!');
+      } catch(e){ toast('Kon het bestand niet lezen.'); }
+    };
+    reader.readAsText(file);
+  };
+  inp.click();
 }
 
 function moveExercise(id, dir){
