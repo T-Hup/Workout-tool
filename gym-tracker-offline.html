@@ -145,6 +145,25 @@ let timerTime = 90, timerActive = false, timerInterval = null;
 let modal = null;            // {type, ...}
 let toastMsg = '', toastTimer = null;
 
+// Herstel een lopende sessie (blijft bewaard bij afsluiten, herladen of navigeren)
+(function restoreSession(){
+  const s = DB.load('gt_session', null);
+  if (!s) return;
+  selectedWorkout = s.selectedWorkout ?? null;
+  completedSets = s.completedSets || {};
+  weights = s.weights || {};
+  savedWeights = s.savedWeights || {};
+  expanded = s.expanded ?? null;
+  timerTime = typeof s.timerTime === 'number' ? s.timerTime : 90;
+  if (s.view === 'workout' && selectedWorkout && exercises.some(e => e.workout_key === selectedWorkout)) view = 'workout';
+  else if (s.view === 'manage') view = 'manage';
+  else view = 'home';
+})();
+
+function persistSession(){
+  DB.save('gt_session', { view, selectedWorkout, expanded, completedSets, weights, savedWeights, timerTime });
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const wex = k => exercises.filter(e => e.workout_key === k).sort((a,b)=>a.sort_order-b.sort_order);
@@ -169,12 +188,17 @@ function setWeight(exId, i, val){
   render();
 }
 
-function progress(){
-  if (!selectedWorkout) return 0;
-  const exs = wex(selectedWorkout);
+function progressForKey(k){
+  const exs = wex(k);
   const total = exs.reduce((a,e)=>a+e.sets,0);
   const done = exs.reduce((a,e)=>{ let c=0; for(let i=0;i<e.sets;i++) if(completedSets[e.id+'-'+i]) c++; return a+c; },0);
   return total ? Math.round(done/total*100) : 0;
+}
+function progress(){ return selectedWorkout ? progressForKey(selectedWorkout) : 0; }
+function hasProgress(){
+  if (Object.values(completedSets).some(Boolean)) return true;
+  for (const m of Object.values(weights)) if (Object.values(m).some(v => v !== '' && v != null)) return true;
+  return false;
 }
 
 function toggleSet(exId, i){
@@ -216,6 +240,8 @@ function finishWorkout(){
 const app = document.getElementById('app');
 
 function render(){
+  persistSession();
+  syncHistory();
   app.className = (view === 'workout') ? 'workoutmode' : '';
   let html = '';
   if (view === 'home') html = renderHome();
@@ -244,10 +270,13 @@ function renderHome(){
         <button data-act="manage" class="pill" style="background:var(--card);border:1px solid var(--line);color:var(--muted2)">${I.pencil} Beheren</button>
       </div>
       <div class="grid2">
-        ${wk.map((k,idx)=>`<button data-act="startwo" data-k="${esc(k)}" class="wcard" style="background:${colors[idx%colors.length]}">
-          ${I.dumbbell}
-          <div><div class="big">Training ${esc(k)}</div><div class="sub">${wex(k).length} oefeningen</div></div>
-        </button>`).join('')}
+        ${wk.map((k,idx)=>{
+          const inProg = (k === selectedWorkout && hasProgress());
+          return `<button data-act="startwo" data-k="${esc(k)}" class="wcard" style="background:${colors[idx%colors.length]}">
+          <div class="row" style="align-items:flex-start">${I.dumbbell}${inProg?`<span class="pill" style="background:rgba(0,0,0,.3);color:#fff;font-weight:800">● Bezig ${progressForKey(k)}%</span>`:''}</div>
+          <div><div class="big">Training ${esc(k)}</div><div class="sub">${inProg?'Tik om te hervatten':wex(k).length+' oefeningen'}</div></div>
+        </button>`;
+        }).join('')}
       </div>
     </div>
 
@@ -342,6 +371,7 @@ function renderWorkout(){
         </div>`;
       }).join('')}
       <button data-act="finishask" class="btn-emerald" style="margin-top:8px">${I.award} Training Afronden</button>
+      <button data-act="resetask" style="width:100%;margin-top:10px;color:var(--muted2);font-size:12px;font-weight:700;padding:12px;border-radius:16px;background:var(--card);border:1px solid var(--line)">↺ Sessie opnieuw beginnen</button>
     </div>
     <div class="timerbar">
       <div class="flexc"><div class="tbtn" style="color:var(--blue2)">${I.timer}</div>
@@ -359,6 +389,7 @@ function renderWorkout(){
 function renderModal(){
   if (modal.type === 'confirmFinish') return confirmModal('Workout afronden?','Je gewichten en voltooide sets worden opgeslagen in je geschiedenis.','Opslaan & Klaar','dofinish','var(--emerald)');
   if (modal.type === 'confirmClear') return confirmModal('Weet je het zeker?','Hiermee wis je al je opgeslagen trainingen definitief.','Definitief Wissen','doclear','var(--rose)');
+  if (modal.type === 'confirmReset') return confirmModal('Sessie opnieuw beginnen?','Alle ingevoerde gewichten en afgevinkte sets van deze training worden gewist.','Opnieuw beginnen','doreset','var(--rose)');
   if (modal.type === 'confirmDel'){ const ex = exercises.find(e=>e.id===modal.id); return confirmModal('Oefening verwijderen?', (ex?ex.name:'Deze oefening')+' wordt permanent verwijderd.','Verwijderen','dodelete','var(--rose)'); }
   if (modal.type === 'form') return formModal();
   return '';
@@ -423,14 +454,35 @@ function setWeightNoRender(exId, i, val){
       const j = +inp.dataset.i; if (j!==0 && (inp.value==='' || inp.value===prevFirst)) inp.value = val;
     });
   }
+  persistSession(); // bewaar direct, ook zonder her-render
 }
+
+// ── Terugknop van de telefoon binnen de app houden ──────────────────
+function syncHistory(){
+  try {
+    if (view !== 'home' && !(window.history.state && window.history.state.gt)) {
+      window.history.pushState({ gt: true, v: view }, '');
+    }
+  } catch (e) { /* file:// kan pushState blokkeren — data blijft sowieso bewaard */ }
+}
+window.addEventListener('popstate', () => {
+  if (modal) { modal = null; render(); try { window.history.pushState({ gt: true }, ''); } catch (e) {} return; }
+  if (view !== 'home') { view = 'home'; stopTimer(); render(); }
+  // op home: laat de terugknop de pagina normaal verlaten
+});
 
 function handle(act, el){
   const id = el.dataset.id, k = el.dataset.k;
   switch(act){
-    case 'home': view='home'; selectedWorkout=null; expanded=null; stopTimer(); modal=null; render(); break;
+    case 'home': view='home'; stopTimer(); modal=null; render(); break; // sessie blijft bewaard
     case 'manage': view='manage'; render(); break;
-    case 'startwo': selectedWorkout=k; view='workout'; completedSets={}; weights={}; savedWeights={}; expanded=null; timerTime=90; stopTimer(); render(); break;
+    case 'startwo':
+      if (selectedWorkout !== k) { // ander schema → nieuwe sessie
+        selectedWorkout=k; completedSets={}; weights={}; savedWeights={}; expanded=null; timerTime=90; stopTimer();
+      } // zelfde schema → hervat met bestaande data
+      view='workout'; render(); break;
+    case 'resetask': modal={type:'confirmReset'}; render(); break;
+    case 'doreset': completedSets={}; weights={}; savedWeights={}; timerTime=90; stopTimer(); modal=null; toast('Sessie opnieuw begonnen.'); render(); break;
     case 'toggleexp': expanded = (expanded===id? null : id); render(); break;
     case 'toggleset': toggleSet(id, +el.dataset.i); break;
     case 'finishask': modal={type:'confirmFinish'}; render(); break;
