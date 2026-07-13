@@ -1,12 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import {
   ChevronLeft, Dumbbell, Timer, Target, CheckCircle2, Circle,
   Play, Pause, RotateCcw, ChevronDown, ChevronUp, Calendar,
   Check, Trash2, Award, Plus, Pencil, X, LogOut, User,
-  Bot, Copy, Terminal,
+  Bot, Copy, Terminal, Sparkles,
 } from 'lucide-react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './supabaseClient';
+
+const AiChat = lazy(() => import('./AiChat'));
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -423,6 +425,7 @@ export default function App() {
   const [showFinishModal, setShowFinishModal] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
   const [showManage, setShowManage] = useState(false);
+  const [showAiChat, setShowAiChat] = useState(false);
   const [showMcpGuide, setShowMcpGuide] = useState(false);
   const [mcpApiKey, setMcpApiKey] = useState<string | null>(null);
   const [mcpKeyLoading, setMcpKeyLoading] = useState(false);
@@ -787,6 +790,24 @@ export default function App() {
     );
   }
 
+  // ── Render: AI chat ────────────────────────────────────────────────────────
+
+  if (showAiChat) {
+    return (
+      <Suspense fallback={
+        <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+          <Bot className="text-blue-500 w-10 h-10 animate-pulse" />
+        </div>
+      }>
+        <AiChat
+          userId={session.user.id}
+          onClose={() => setShowAiChat(false)}
+          onDataChanged={() => loadData(session.user.id)}
+        />
+      </Suspense>
+    );
+  }
+
   // ── Render: MCP guide ──────────────────────────────────────────────────────
 
   if (showMcpGuide) {
@@ -1061,6 +1082,21 @@ export default function App() {
             )}
           </div>
 
+          {/* AI coach button */}
+          <button
+            onClick={() => setShowAiChat(true)}
+            className="w-full flex items-center gap-3 bg-gradient-to-r from-blue-950/50 to-slate-900/60 border border-blue-500/30 p-4 rounded-3xl text-left"
+          >
+            <div className="bg-blue-600/20 p-2.5 rounded-2xl shrink-0">
+              <Sparkles className="text-blue-400 w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-black text-sm text-white">AI-coach in de app</p>
+              <p className="text-xs text-slate-400 truncate">Laat de AI je oefeningen beheren & data analyseren</p>
+            </div>
+            <ChevronLeft size={18} className="text-slate-500 rotate-180 shrink-0 ml-auto" />
+          </button>
+
           {/* Claude MCP button */}
           <button
             onClick={() => { setShowMcpGuide(true); fetchMcpApiKey(); }}
@@ -1070,8 +1106,8 @@ export default function App() {
               <Bot className="text-blue-400 w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <p className="font-black text-sm text-white">Koppelen met Claude</p>
-              <p className="text-xs text-slate-400 truncate">Stel vragen over je data via MCP</p>
+              <p className="font-black text-sm text-white">Koppelen met Claude (MCP)</p>
+              <p className="text-xs text-slate-400 truncate">Gebruik je data in Claude Desktop of CLI</p>
             </div>
             <ChevronLeft size={18} className="text-slate-500 rotate-180 shrink-0 ml-auto" />
           </button>

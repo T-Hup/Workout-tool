@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#020617" />
+<title>Gym Tracker</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  :root { --bg:#020617; --card:#0f172a; --card2:#1e293b; --line:#1e293b; --muted:#64748b; --muted2:#94a3b8; --blue:#2563eb; --blue2:#3b82f6; --emerald:#10b981; --rose:#e11d48; --amber:#d97706; }
+  html, body { background: var(--bg); color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; min-height: 100vh; }
+  body { padding-bottom: env(safe-area-inset-bottom); }
+  #app { max-width: 480px; margin: 0 auto; }
+  button { font-family: inherit; cursor: pointer; border: none; color: inherit; background: none; }
+  input, select, textarea { font-family: inherit; }
+  .screen { min-height: 100vh; }
+  .pad { padding: 16px; }
+  .header { position: sticky; top: 0; z-index: 20; background: rgba(15,23,42,.95); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); padding: 16px; display: flex; align-items: center; justify-content: space-between; }
+  .iconbtn { padding: 12px; border-radius: 16px; background: var(--card2); display: inline-flex; }
+  .title { font-size: 20px; font-weight: 900; }
+  .h1 { font-size: 24px; font-weight: 900; letter-spacing: -.5px; }
+  .h2 { font-size: 18px; font-weight: 900; display: flex; align-items: center; gap: 8px; }
+  .muted { color: var(--muted2); font-size: 12px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .wcard { padding: 20px; border-radius: 24px; text-align: left; height: 144px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255,255,255,.12); box-shadow: 0 10px 20px rgba(0,0,0,.3); }
+  .wcard .big { font-size: 20px; font-weight: 900; }
+  .wcard .sub { font-size: 12px; color: rgba(255,255,255,.7); }
+  .section { margin-top: 32px; }
+  .row { display: flex; align-items: center; justify-content: space-between; }
+  .pill { font-size: 11px; font-weight: 700; padding: 6px 12px; border-radius: 12px; display: inline-flex; align-items: center; gap: 6px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 24px; }
+  .exhead { padding: 16px; display: flex; justify-content: space-between; align-items: center; }
+  .tag { font-size: 11px; font-weight: 700; color: var(--muted2); background: var(--card2); padding: 2px 8px; border-radius: 999px; text-transform: uppercase; display: inline-block; margin-bottom: 4px; }
+  .exname { font-size: 18px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .reps { font-size: 13px; font-weight: 700; color: var(--blue2); background: rgba(30,58,138,.5); padding: 4px 10px; border-radius: 12px; }
+  .setrow { display: flex; align-items: center; justify-content: space-between; padding: 12px; border-radius: 16px; border: 1px solid var(--line); background: rgba(15,23,42,.8); margin-top: 8px; }
+  .setrow.done { background: rgba(6,78,59,.3); border-color: rgba(16,185,129,.3); }
+  .setlabel { font-size: 14px; font-weight: 900; color: var(--muted2); width: 48px; }
+  .winput { display: flex; align-items: center; background: var(--bg); border: 1px solid #334155; border-radius: 12px; padding: 4px 10px; width: 96px; }
+  .winput input { width: 100%; background: transparent; color: #fff; font-weight: 900; text-align: center; font-size: 14px; border: none; outline: none; }
+  .winput span { font-size: 10px; font-weight: 700; color: var(--muted); margin-left: 4px; }
+  .btn { width: 100%; padding: 16px; border-radius: 16px; font-weight: 900; font-size: 14px; }
+  .btn-blue { background: var(--blue); color: #fff; }
+  .btn-emerald { background: linear-gradient(90deg, #10b981, #14b8a6); color: #fff; font-size: 17px; padding: 20px; border-radius: 24px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .btn-slate { background: var(--card2); }
+  .btn-rose { background: var(--rose); color: #fff; }
+  .btn:disabled { opacity: .4; }
+  .progress-wrap { width: 100%; background: var(--card2); height: 8px; }
+  .progress-bar { height: 8px; background: linear-gradient(90deg, #3b82f6, #10b981); transition: width .3s; }
+  .timerbar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 30; background: var(--card); border-top: 1px solid var(--line); padding: 16px; display: flex; align-items: center; justify-content: space-between; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+  #app.workoutmode { padding-bottom: 120px; }
+  .timer-time { font-size: 24px; font-weight: 900; font-variant-numeric: tabular-nums; }
+  .tbtn { padding: 12px; border-radius: 16px; background: var(--card2); }
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.8); backdrop-filter: blur(4px); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .modal { background: var(--card); border: 1px solid var(--card2); border-radius: 24px; width: 100%; max-width: 384px; padding: 24px; }
+  .modal.sheet { max-height: 90vh; overflow-y: auto; }
+  .field { width: 100%; background: var(--bg); border: 1px solid #334155; border-radius: 12px; padding: 10px 12px; font-size: 14px; color: #fff; outline: none; margin-top: 4px; }
+  .field:focus { border-color: var(--blue); }
+  .label { font-size: 10px; font-weight: 700; color: var(--muted2); text-transform: uppercase; }
+  .toast { position: fixed; top: 24px; left: 16px; right: 16px; z-index: 60; background: var(--card); border: 1px solid #334155; padding: 12px 16px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.5); display: flex; align-items: center; gap: 12px; font-size: 12px; font-weight: 700; max-width: 448px; margin: 0 auto; }
+  .histcard { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-top: 12px; }
+  .histgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; margin-top: 8px; }
+  .histitem { display: flex; justify-content: space-between; background: rgba(2,6,23,.5); padding: 6px; border-radius: 8px; border: 1px solid rgba(30,41,59,.5); }
+  .empty { background: rgba(15,23,42,.4); border: 1px solid #0f172a; border-radius: 24px; padding: 32px; text-align: center; color: var(--muted); font-size: 14px; }
+  svg { display: inline-block; vertical-align: middle; pointer-events: none; }
+  .flexc { display: flex; align-items: center; gap: 12px; }
+  .movecol { display: flex; flex-direction: column; gap: 5px; margin-right: 12px; }
+  .movebtn { padding: 9px 11px; border-radius: 10px; background: #273449; color: #cbd5e1; border: 1px solid #3a4a63; display: inline-flex; }
+  .movebtn:active { background: var(--blue); color: #fff; }
+  .movebtn:disabled { opacity: .2; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+// ── Icons (inline SVG) ──────────────────────────────────────────────
+const I = {
+  dumbbell: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6.5 6.5 11 11"/><path d="m21 21-1-1"/><path d="m3 3 1 1"/><path d="m18 22 4-4"/><path d="m2 6 4-4"/><path d="m3 10 7-7"/><path d="m14 21 7-7"/></svg>',
+  back: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
+  target: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
+  calendar: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>',
+  pencil: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+  plus: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5v14"/></svg>',
+  trash: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+  check: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  checkc: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>',
+  circle: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>',
+  award: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15.477 12.89 1.515 8.526a.5.5 0 0 1-.81.47l-3.58-2.687a1 1 0 0 0-1.197 0l-3.586 2.686a.5.5 0 0 1-.81-.469l1.514-8.526"/><circle cx="12" cy="8" r="6"/></svg>',
+  timer: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2h4M12 14l3-3"/><circle cx="12" cy="14" r="8"/></svg>',
+  play: '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="6 3 20 12 6 21 6 3"/></svg>',
+  pause: '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>',
+  reset: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>',
+  chevd: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+  chevu: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>',
+  x: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  arrup: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>',
+  arrdown: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+};
+
+// ── Storage ─────────────────────────────────────────────────────────
+const DB = {
+  load(key, fallback) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; } },
+  save(key, val) { localStorage.setItem(key, JSON.stringify(val)); },
+};
+
+const MUSCLE_GROUPS = [
+  { value: 'quads', label: 'Quads' }, { value: 'hamstrings', label: 'Hamstrings' },
+  { value: 'chest', label: 'Borst' }, { value: 'lats', label: 'Rug (breed)' },
+  { value: 'shoulders', label: 'Schouders' }, { value: 'core', label: 'Core' },
+  { value: 'grip', label: 'Grip / Onderarm' }, { value: 'fullbody', label: 'Heel lichaam' },
+];
+
+const DEFAULT_EXERCISES = [
+  { name:'Back Squat', reps:'5 tot 8', sets:3, focus:'Bovenbenen en Billen', muscle_group:'quads', workout_key:'A', tips:['Voeten op schouderbreedte','Houd de rug recht','Zak tot heupen onder de knieën'] },
+  { name:'Dumbbell Bench Press', reps:'8 tot 12', sets:3, focus:'Borst en Triceps', muscle_group:'chest', workout_key:'A', tips:['Schouderbladen in het bankje','Gecontroleerd omlaag','Krachtig uitstrekken'] },
+  { name:'Lat Pulldown', reps:'8 tot 12', sets:3, focus:'Bovenrug en Breedte', muscle_group:'lats', workout_key:'A', tips:['Trek naar bovenkant borst','Licht naar achteren leunen','Schouderbladen samenknijpen'] },
+  { name:'Dumbbell Romanian Deadlift', reps:'8 tot 10', sets:3, focus:'Hamstrings en Billen', muscle_group:'hamstrings', workout_key:'A', tips:['Heupen naar achteren','Gewichten dicht bij benen','Lichte kniebuiging'] },
+  { name:'Dumbbell Lateral Raises', reps:'12 tot 15', sets:3, focus:'Zijkant Schouders', muscle_group:'shoulders', workout_key:'A', tips:['Licht voorover','Zijwaarts omhoog','Ellebogen iets gebogen'] },
+  { name:'Plank', reps:'45 tot 60 sec', sets:3, focus:'Core en Buikspieren', muscle_group:'core', workout_key:'A', tips:['Lichaam in rechte lijn','Buik en billen aanspannen','Kijk naar de grond'] },
+  { name:'Trap Bar Deadlift', reps:'5 tot 8', sets:3, focus:'Heel lichaam en Grip', muscle_group:'fullbody', workout_key:'B', tips:['Voeten in het midden','Borst op, rug recht','Duw de grond weg'] },
+  { name:'Incline Dumbbell Press', reps:'8 tot 12', sets:3, focus:'Bovenkant Borst', muscle_group:'chest', workout_key:'B', tips:['Bankje op 30 graden','Tot borsthoogte','Omhoog in lichte boog'] },
+  { name:'Chest-Supported Row', reps:'8 tot 12', sets:3, focus:'Middenrug en Dikte', muscle_group:'lats', workout_key:'B', tips:['Borst tegen kussen','Ellebogen naar achteren','Rustig laten zakken'] },
+  { name:'Bulgarian Split Squat', reps:'8 tot 10 p/been', sets:3, focus:'Benen en Balans', muscle_group:'quads', workout_key:'B', tips:['Voet achter op bankje','Recht naar beneden','Voorste knie stabiel'] },
+  { name:'Face Pulls', reps:'12 tot 15', sets:3, focus:'Achterkant Schouders', muscle_group:'shoulders', workout_key:'B', tips:['Touw richting voorhoofd','Handen uit elkaar','Ellebogen hoog'] },
+  { name:"Farmer's Carries", reps:'30 tot 40 m', sets:3, focus:'Gripkracht en Core', muscle_group:'grip', workout_key:'B', tips:['Zware gewichten','Trotse borst','Kleine stappen'] },
+];
+
+// ── State ───────────────────────────────────────────────────────────
+let exercises = DB.load('gt_exercises', null);
+if (!exercises) {
+  exercises = DEFAULT_EXERCISES.map((e, i) => ({ ...e, id: 'ex' + i + '_' + Date.now(), sort_order: i }));
+  DB.save('gt_exercises', exercises);
+}
+let history = DB.load('gt_history', []);
+
+let view = 'home';          // home | workout | manage
+let selectedWorkout = null;
+let completedSets = {};      // `${exId}-${i}` -> bool
+let weights = {};            // exId -> {i: value}
+let savedWeights = {};       // exId -> first-set value
+let expanded = null;         // exId
+let timerTime = 90, timerActive = false, timerInterval = null;
+let modal = null;            // {type, ...}
+let toastMsg = '', toastTimer = null;
+
+// Herstel een lopende sessie (blijft bewaard bij afsluiten, herladen of navigeren)
+(function restoreSession(){
+  const s = DB.load('gt_session', null);
+  if (!s) return;
+  selectedWorkout = s.selectedWorkout ?? null;
+  completedSets = s.completedSets || {};
+  weights = s.weights || {};
+  savedWeights = s.savedWeights || {};
+  expanded = s.expanded ?? null;
+  timerTime = typeof s.timerTime === 'number' ? s.timerTime : 90;
+  if (s.view === 'workout' && selectedWorkout && exercises.some(e => e.workout_key === selectedWorkout)) view = 'workout';
+  else if (s.view === 'manage') view = 'manage';
+  else view = 'home';
+})();
+
+function persistSession(){
+  DB.save('gt_session', { view, selectedWorkout, expanded, completedSets, weights, savedWeights, timerTime });
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const wex = k => exercises.filter(e => e.workout_key === k).sort((a,b)=>a.sort_order-b.sort_order);
+const keys = () => [...new Set(exercises.map(e => e.workout_key))].sort();
+function fmtTime(s){ const m = Math.floor(s/60); return m + ':' + String(s%60).padStart(2,'0'); }
+function toast(msg){ toastMsg = msg; render(); clearTimeout(toastTimer); toastTimer = setTimeout(()=>{ toastMsg=''; render(); }, 3000); }
+function saveEx(){ DB.save('gt_exercises', exercises); }
+function saveHist(){ DB.save('gt_history', history); }
+
+function getWeight(exId, i){
+  if (weights[exId] && weights[exId][i] != null) return weights[exId][i];
+  return savedWeights[exId] ?? '';
+}
+function setWeight(exId, i, val){
+  weights[exId] = weights[exId] || {};
+  const prevFirst = weights[exId][0] ?? '';
+  weights[exId][i] = val;
+  if (i === 0) {
+    for (let j=1;j<10;j++){ const cur = weights[exId][j] ?? ''; if (cur==='' || cur===prevFirst) weights[exId][j] = val; }
+    savedWeights[exId] = val;
+  }
+  render();
+}
+
+function progressForKey(k){
+  const exs = wex(k);
+  const total = exs.reduce((a,e)=>a+e.sets,0);
+  const done = exs.reduce((a,e)=>{ let c=0; for(let i=0;i<e.sets;i++) if(completedSets[e.id+'-'+i]) c++; return a+c; },0);
+  return total ? Math.round(done/total*100) : 0;
+}
+function progress(){ return selectedWorkout ? progressForKey(selectedWorkout) : 0; }
+function hasProgress(){
+  if (Object.values(completedSets).some(Boolean)) return true;
+  for (const m of Object.values(weights)) if (Object.values(m).some(v => v !== '' && v != null)) return true;
+  return false;
+}
+
+function toggleSet(exId, i){
+  const key = exId+'-'+i; const was = completedSets[key];
+  completedSets[key] = !was;
+  if (!was){ timerTime = 90; startTimer(); toast('Rusttimer gestart — 90 sec pauze.'); }
+  render();
+}
+
+function startTimer(){
+  timerActive = true;
+  clearInterval(timerInterval);
+  timerInterval = setInterval(()=>{
+    timerTime--;
+    if (timerTime <= 0){ timerTime = 0; stopTimer(); toast('Tijd is om! Volgende set.'); if(navigator.vibrate) navigator.vibrate([200,100,200]); }
+    updateTimerUI();
+  }, 1000);
+  render();
+}
+function stopTimer(){ timerActive = false; clearInterval(timerInterval); }
+function updateTimerUI(){ const el = document.getElementById('timerval'); if (el) el.textContent = fmtTime(timerTime); }
+
+function finishWorkout(){
+  const exs = wex(selectedWorkout);
+  const title = 'Training ' + selectedWorkout;
+  const log = {
+    id: 'log_' + Date.now(), workout_title: title, created_at: new Date().toISOString(),
+    log_exercises: exs.map(ex => ({
+      exercise_name: ex.name,
+      log_sets: Array.from({length: ex.sets}, (_,i)=>({ set_number:i+1, weight: getWeight(ex.id,i) || '0', completed: !!completedSets[ex.id+'-'+i] })),
+    })),
+  };
+  history.unshift(log); if (history.length > 100) history = history.slice(0,100); saveHist();
+  completedSets = {}; weights = {}; selectedWorkout = null; expanded = null; stopTimer(); timerTime = 90;
+  modal = null; view = 'home'; toast('Training opgeslagen!'); render();
+}
+
+// ── Render ──────────────────────────────────────────────────────────
+const app = document.getElementById('app');
+
+function render(){
+  persistSession();
+  syncHistory();
+  app.className = (view === 'workout') ? 'workoutmode' : '';
+  let html = '';
+  if (view === 'home') html = renderHome();
+  else if (view === 'manage') html = renderManage();
+  else if (view === 'workout') html = renderWorkout();
+  if (modal) html += renderModal();
+  if (toastMsg) html += `<div class="toast">${I.check}<span>${esc(toastMsg)}</span></div>`;
+  app.innerHTML = html;
+  bind();
+}
+
+function renderHome(){
+  const wk = keys();
+  const colors = ['#2563eb','#059669','#7c3aed','#ea580c'];
+  return `<div class="screen pad">
+    <div class="row" style="margin-top:8px">
+      <div class="flexc">
+        <div style="background:rgba(37,99,235,.2);padding:12px;border-radius:16px;color:var(--blue2)">${I.dumbbell}</div>
+        <div><div class="h1">Gym Tracker</div><div class="muted">Volledig offline op je telefoon</div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="row" style="margin-bottom:12px">
+        <div class="h2" style="color:#fff">${I.target}<span>Start training</span></div>
+        <button data-act="manage" class="pill" style="background:var(--card);border:1px solid var(--line);color:var(--muted2)">${I.pencil} Beheren</button>
+      </div>
+      <div class="grid2">
+        ${wk.map((k,idx)=>{
+          const inProg = (k === selectedWorkout && hasProgress());
+          return `<button data-act="startwo" data-k="${esc(k)}" class="wcard" style="background:${colors[idx%colors.length]}">
+          <div class="row" style="align-items:flex-start">${I.dumbbell}${inProg?`<span class="pill" style="background:rgba(0,0,0,.3);color:#fff;font-weight:800">● Bezig ${progressForKey(k)}%</span>`:''}</div>
+          <div><div class="big">Training ${esc(k)}</div><div class="sub">${inProg?'Tik om te hervatten':wex(k).length+' oefeningen'}</div></div>
+        </button>`;
+        }).join('')}
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="row" style="margin-bottom:8px">
+        <div class="h2" style="color:#fff"><span style="color:#f97316">${I.calendar}</span><span>Laatste prestaties</span></div>
+        ${history.length? `<button data-act="clearhist" class="pill" style="background:rgba(136,19,55,.2);border:1px solid rgba(225,29,72,.1);color:#fb7185">${I.trash} Wissen</button>`:''}
+      </div>
+      ${history.length===0
+        ? `<div class="empty">Nog geen afgeronde trainingen. Voltooi een training om je logboek op te bouwen.</div>`
+        : `<div style="max-height:340px;overflow-y:auto">${history.map(renderHistCard).join('')}</div>`}
+    </div>
+  </div>`;
+}
+
+function renderHistCard(log){
+  const d = new Date(log.created_at).toLocaleDateString('nl-NL',{day:'numeric',month:'long',year:'numeric'});
+  return `<div class="histcard">
+    <div class="row"><span style="font-weight:900;font-size:14px;color:var(--blue2)">${esc(log.workout_title)}</span><span style="font-size:10px;color:var(--muted)">${d}</span></div>
+    <div class="histgrid">${(log.log_exercises||[]).map(le=>{
+      const best = (le.log_sets||[]).reduce((m,s)=>Math.max(m, parseFloat(s.weight)||0),0);
+      return `<div class="histitem"><span style="color:var(--muted2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:4px">${esc(le.exercise_name)}</span><span style="font-weight:700">${best} kg</span></div>`;
+    }).join('')}</div>
+  </div>`;
+}
+
+function renderManage(){
+  const wk = keys();
+  const ordered = ['A','B',...wk.filter(k=>k!=='A'&&k!=='B')].filter((k,i,a)=>a.indexOf(k)===i && wk.includes(k));
+  const allKeys = ordered.length? ordered : wk;
+  return `<div class="screen">
+    <div class="header">
+      <button data-act="home" class="iconbtn">${I.back}</button>
+      <div class="title">Oefeningen beheren</div><div style="width:44px"></div>
+    </div>
+    <div class="pad">
+      <div class="muted" style="margin-bottom:16px">Tik op de blauwe ↑↓ knoppen links om de volgorde van een oefening te wijzigen.</div>
+      ${allKeys.map(k=>`<div style="margin-bottom:24px">
+        <div class="row" style="margin-bottom:12px">
+          <div class="h2" style="font-size:16px;color:var(--muted2)">Training ${esc(k)}</div>
+          <button data-act="addex" data-k="${esc(k)}" class="pill" style="background:rgba(30,58,138,.4);border:1px solid rgba(59,130,246,.2);color:var(--blue2)">${I.plus} Toevoegen</button>
+        </div>
+        ${(gl=>gl.map((ex,i)=>`<div class="card" style="padding:12px;display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="movecol">
+            <button data-act="moveup" data-id="${ex.id}" class="movebtn" ${i===0?'disabled':''}>${I.arrup}</button>
+            <button data-act="movedown" data-id="${ex.id}" class="movebtn" ${i===gl.length-1?'disabled':''}>${I.arrdown}</button>
+          </div>
+          <div style="min-width:0;flex:1"><div style="font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(ex.name)}</div><div class="muted">${esc(ex.reps)} · ${ex.sets} sets</div></div>
+          <div class="flexc" style="gap:8px;margin-left:12px">
+            <button data-act="editex" data-id="${ex.id}" class="iconbtn" style="padding:8px;border-radius:12px">${I.pencil}</button>
+            <button data-act="delex" data-id="${ex.id}" class="iconbtn" style="padding:8px;border-radius:12px;background:rgba(136,19,55,.3);color:#fb7185">${I.trash}</button>
+          </div>
+        </div>`).join('') || `<div class="muted" style="padding:8px 4px">Geen oefeningen. Voeg er een toe.</div>`)(wex(k))}
+      </div>`).join('')}
+      <button data-act="newschema" style="width:100%;border:1px dashed #334155;color:var(--muted2);font-size:12px;font-weight:700;padding:12px;border-radius:16px;display:flex;align-items:center;justify-content:center;gap:8px">${I.plus} Nieuw trainingsschema</button>
+
+      <div style="margin-top:28px;padding-top:20px;border-top:1px solid var(--line)">
+        <div class="h2" style="font-size:15px;color:var(--muted2);margin-bottom:4px">Back-up</div>
+        <div class="muted" style="margin-bottom:12px">Zet je oefeningen en historie over naar een nieuwe versie van de app, of bewaar ze veilig.</div>
+        <div style="display:flex;gap:12px">
+          <button data-act="export" class="btn btn-slate" style="padding:14px;font-size:12px">⬇ Exporteer data</button>
+          <button data-act="import" class="btn btn-slate" style="padding:14px;font-size:12px">⬆ Importeer data</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderWorkout(){
+  const exs = wex(selectedWorkout); const p = progress();
+  return `<div class="screen">
+    <div class="header">
+      <button data-act="home" class="iconbtn">${I.back}</button>
+      <div class="title">Training ${esc(selectedWorkout)}</div>
+      <div class="pill" style="background:rgba(30,58,138,.5);border:1px solid rgba(59,130,246,.3);color:var(--blue2)">${p}% Klaar</div>
+    </div>
+    <div class="progress-wrap"><div class="progress-bar" style="width:${p}%"></div></div>
+    <div class="pad">
+      ${exs.map(ex=>{
+        const isExp = expanded === ex.id;
+        const doneCount = Array.from({length:ex.sets},(_,i)=>completedSets[ex.id+'-'+i]).filter(Boolean).length;
+        const isDone = doneCount === ex.sets;
+        return `<div class="card" style="margin-bottom:16px;${isDone?'border-color:rgba(16,185,129,.5);background:rgba(6,78,59,.2)':isExp?'border-color:var(--blue)':''}">
+          <div class="exhead" data-act="toggleexp" data-id="${ex.id}">
+            <div style="flex:1;min-width:0;padding-right:8px"><span class="tag">${esc(ex.focus)}</span><div class="exname">${esc(ex.name)}</div></div>
+            <div class="flexc" style="gap:8px"><span class="reps">${esc(ex.reps)}</span>${isExp?I.chevu:I.chevd}</div>
+          </div>
+          ${isExp && ex.tips && ex.tips.length ? `<div style="padding:0 16px 8px"><div style="background:rgba(2,6,23,.6);padding:14px;border-radius:16px;border:1px solid rgba(30,41,59,.8)">${ex.tips.map(t=>`<div style="display:flex;gap:8px;font-size:14px;color:var(--muted2);margin-bottom:6px"><span style="color:var(--blue2);font-weight:700">•</span><span>${esc(t)}</span></div>`).join('')}</div></div>`:''}
+          <div style="padding:16px;border-top:1px solid rgba(30,41,59,.6)">
+            <div class="label" style="margin-bottom:4px">Huidige Sets</div>
+            ${Array.from({length:ex.sets},(_,i)=>{
+              const checked = !!completedSets[ex.id+'-'+i];
+              return `<div class="setrow ${checked?'done':''}">
+                <div class="flexc" style="gap:16px">
+                  <span class="setlabel">Set ${i+1}</span>
+                  <div class="winput"><input type="number" inputmode="decimal" placeholder="0" value="${esc(getWeight(ex.id,i))}" data-act="weight" data-id="${ex.id}" data-i="${i}"><span>kg</span></div>
+                </div>
+                <button data-act="toggleset" data-id="${ex.id}" data-i="${i}" style="padding:6px;color:${checked?'var(--emerald)':'#475569'}">${checked?I.checkc:I.circle}</button>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>`;
+      }).join('')}
+      <button data-act="finishask" class="btn-emerald" style="margin-top:8px">${I.award} Training Afronden</button>
+      <button data-act="resetask" style="width:100%;margin-top:10px;color:var(--muted2);font-size:12px;font-weight:700;padding:12px;border-radius:16px;background:var(--card);border:1px solid var(--line)">↺ Sessie opnieuw beginnen</button>
+    </div>
+    <div class="timerbar">
+      <div class="flexc"><div class="tbtn" style="color:var(--blue2)">${I.timer}</div>
+        <div><div class="label">RUSTTIMER</div><div class="timer-time" id="timerval">${fmtTime(timerTime)}</div></div></div>
+      <div class="flexc" style="gap:8px">
+        <button data-act="set60" class="pill" style="background:var(--card2)">1 min</button>
+        <button data-act="set90" class="pill" style="background:var(--card2)">1.5 min</button>
+        <button data-act="toggletimer" class="tbtn" style="color:#fff;background:${timerActive?'var(--amber)':'var(--blue)'}">${timerActive?I.pause:I.play}</button>
+        <button data-act="resettimer" class="tbtn" style="color:var(--muted2)">${I.reset}</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderModal(){
+  if (modal.type === 'confirmFinish') return confirmModal('Workout afronden?','Je gewichten en voltooide sets worden opgeslagen in je geschiedenis.','Opslaan & Klaar','dofinish','var(--emerald)');
+  if (modal.type === 'confirmClear') return confirmModal('Weet je het zeker?','Hiermee wis je al je opgeslagen trainingen definitief.','Definitief Wissen','doclear','var(--rose)');
+  if (modal.type === 'confirmReset') return confirmModal('Sessie opnieuw beginnen?','Alle ingevoerde gewichten en afgevinkte sets van deze training worden gewist.','Opnieuw beginnen','doreset','var(--rose)');
+  if (modal.type === 'confirmDel'){ const ex = exercises.find(e=>e.id===modal.id); return confirmModal('Oefening verwijderen?', (ex?ex.name:'Deze oefening')+' wordt permanent verwijderd.','Verwijderen','dodelete','var(--rose)'); }
+  if (modal.type === 'form') return formModal();
+  return '';
+}
+
+function confirmModal(title, body, btn, act, color){
+  return `<div class="modal-bg" data-act="closemodal"><div class="modal" data-stop>
+    <div class="h2" style="font-size:18px">${esc(title)}</div>
+    <p style="font-size:14px;color:var(--muted2);margin:12px 0">${esc(body)}</p>
+    <div style="display:flex;gap:12px">
+      <button data-act="closemodal" class="btn btn-slate" style="padding:12px;font-size:12px">Annuleren</button>
+      <button data-act="${act}" class="btn" style="padding:12px;font-size:12px;background:${color};color:#fff">${esc(btn)}</button>
+    </div>
+  </div></div>`;
+}
+
+function formModal(){
+  const ex = modal.id ? exercises.find(e=>e.id===modal.id) : null;
+  const v = ex || { name:'', reps:'', sets:3, focus:'', muscle_group:'quads', image:'', tips:[] };
+  return `<div class="modal-bg" data-act="closemodal"><div class="modal sheet" data-stop>
+    <div class="row"><div class="h2" style="font-size:18px">${ex?'Oefening bewerken':'Oefening toevoegen'}</div><button data-act="closemodal" class="iconbtn" style="padding:8px">${I.x}</button></div>
+    <div style="margin-top:16px">
+      <input id="f_name" class="field" placeholder="Naam *" value="${esc(v.name)}">
+      <input id="f_reps" class="field" placeholder="Herhalingen (bijv. 8 tot 12) *" value="${esc(v.reps)}" style="margin-top:12px">
+      <div style="display:flex;gap:12px;margin-top:12px">
+        <div style="flex:1"><div class="label">Aantal sets</div><input id="f_sets" type="number" min="1" max="10" class="field" value="${v.sets}"></div>
+        <div style="flex:1"><div class="label">Spiergroep</div><select id="f_mg" class="field">${MUSCLE_GROUPS.map(g=>`<option value="${g.value}" ${g.value===v.muscle_group?'selected':''}>${g.label}</option>`).join('')}</select></div>
+      </div>
+      <input id="f_focus" class="field" placeholder="Focus (bijv. Borst en Triceps) *" value="${esc(v.focus)}" style="margin-top:12px">
+      <div style="margin-top:12px"><div class="label">Tips (één per regel)</div><textarea id="f_tips" rows="3" class="field" style="resize:none">${esc((v.tips||[]).join('\n'))}</textarea></div>
+    </div>
+    <div style="display:flex;gap:12px;margin-top:16px">
+      <button data-act="closemodal" class="btn btn-slate" style="padding:12px;font-size:12px">Annuleren</button>
+      <button data-act="saveform" class="btn btn-blue" style="padding:12px;font-size:12px">Opslaan</button>
+    </div>
+  </div></div>`;
+}
+
+// ── Events ──────────────────────────────────────────────────────────
+function bind(){
+  app.querySelectorAll('[data-act]').forEach(el=>{
+    const act = el.dataset.act;
+    if (act === 'weight'){ el.addEventListener('input', e=> setWeightNoRender(el.dataset.id, +el.dataset.i, e.target.value)); return; }
+    el.addEventListener('click', e=>{
+      if (el.hasAttribute('data-stop')) return;
+      handle(act, el, e);
+    });
+  });
+  const stop = app.querySelector('[data-stop]'); if (stop) stop.addEventListener('click', e=> e.stopPropagation());
+}
+
+// update weight without full re-render (keeps keyboard focus)
+function setWeightNoRender(exId, i, val){
+  weights[exId] = weights[exId] || {};
+  const prevFirst = weights[exId][0] ?? '';
+  weights[exId][i] = val;
+  if (i === 0){
+    for (let j=1;j<10;j++){ const cur = weights[exId][j] ?? ''; if (cur==='' || cur===prevFirst) weights[exId][j] = val; }
+    savedWeights[exId] = val;
+    // update sibling inputs visually
+    app.querySelectorAll(`[data-act="weight"][data-id="${exId}"]`).forEach(inp=>{
+      const j = +inp.dataset.i; if (j!==0 && (inp.value==='' || inp.value===prevFirst)) inp.value = val;
+    });
+  }
+  persistSession(); // bewaar direct, ook zonder her-render
+}
+
+// ── Terugknop van de telefoon binnen de app houden ──────────────────
+function syncHistory(){
+  try {
+    if (view !== 'home' && !(window.history.state && window.history.state.gt)) {
+      window.history.pushState({ gt: true, v: view }, '');
+    }
+  } catch (e) { /* file:// kan pushState blokkeren — data blijft sowieso bewaard */ }
+}
+window.addEventListener('popstate', () => {
+  if (modal) { modal = null; render(); try { window.history.pushState({ gt: true }, ''); } catch (e) {} return; }
+  if (view !== 'home') { view = 'home'; stopTimer(); render(); }
+  // op home: laat de terugknop de pagina normaal verlaten
+});
+
+function handle(act, el){
+  const id = el.dataset.id, k = el.dataset.k;
+  switch(act){
+    case 'home': view='home'; stopTimer(); modal=null; render(); break; // sessie blijft bewaard
+    case 'manage': view='manage'; render(); break;
+    case 'startwo':
+      if (selectedWorkout !== k) { // ander schema → nieuwe sessie
+        selectedWorkout=k; completedSets={}; weights={}; savedWeights={}; expanded=null; timerTime=90; stopTimer();
+      } // zelfde schema → hervat met bestaande data
+      view='workout'; render(); break;
+    case 'resetask': modal={type:'confirmReset'}; render(); break;
+    case 'doreset': completedSets={}; weights={}; savedWeights={}; timerTime=90; stopTimer(); modal=null; toast('Sessie opnieuw begonnen.'); render(); break;
+    case 'toggleexp': expanded = (expanded===id? null : id); render(); break;
+    case 'toggleset': toggleSet(id, +el.dataset.i); break;
+    case 'finishask': modal={type:'confirmFinish'}; render(); break;
+    case 'dofinish': finishWorkout(); break;
+    case 'clearhist': modal={type:'confirmClear'}; render(); break;
+    case 'doclear': history=[]; saveHist(); modal=null; toast('Geschiedenis gewist.'); render(); break;
+    case 'set60': timerTime=60; startTimer(); break;
+    case 'set90': timerTime=90; startTimer(); break;
+    case 'toggletimer': timerActive? stopTimer() : startTimer(); render(); break;
+    case 'resettimer': timerTime=90; stopTimer(); render(); break;
+    case 'moveup': moveExercise(id, -1); break;
+    case 'movedown': moveExercise(id, 1); break;
+    case 'export': exportData(); break;
+    case 'import': importData(); break;
+    case 'addex': modal={type:'form', key:k}; render(); break;
+    case 'editex': modal={type:'form', id}; render(); break;
+    case 'delex': modal={type:'confirmDel', id}; render(); break;
+    case 'dodelete': exercises = exercises.filter(e=>e.id!==modal.id); saveEx(); modal=null; toast('Oefening verwijderd.'); render(); break;
+    case 'newschema': { const key=(prompt('Letter voor nieuw schema (bijv. C):')||'').toUpperCase().trim(); if(/^[A-Z]$/.test(key)){ modal={type:'form', key}; render(); } break; }
+    case 'saveform': saveForm(); break;
+    case 'closemodal': modal=null; render(); break;
+  }
+}
+
+function exportData(){
+  const data = { app:'gym-tracker', version:1, exportedAt:new Date().toISOString(), exercises, history };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'gym-tracker-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+  toast('Back-up gedownload.');
+}
+
+function importData(){
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'application/json,.json';
+  inp.onchange = ()=>{
+    const file = inp.files && inp.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      try {
+        const data = JSON.parse(reader.result);
+        if (!data || !Array.isArray(data.exercises)) { toast('Ongeldig back-upbestand.'); return; }
+        exercises = data.exercises;
+        history = Array.isArray(data.history) ? data.history : [];
+        saveEx(); saveHist();
+        selectedWorkout=null; completedSets={}; weights={}; savedWeights={}; expanded=null; view='manage';
+        render(); toast('Data geïmporteerd!');
+      } catch(e){ toast('Kon het bestand niet lezen.'); }
+    };
+    reader.readAsText(file);
+  };
+  inp.click();
+}
+
+function moveExercise(id, dir){
+  const ex = exercises.find(e=>e.id===id); if (!ex) return;
+  const group = wex(ex.workout_key);            // sorted by sort_order
+  const idx = group.findIndex(e=>e.id===id);
+  const swap = idx + dir;
+  if (swap < 0 || swap >= group.length) return;
+  // reorder within the group array, then reassign sort_order sequentially
+  group.splice(swap, 0, group.splice(idx, 1)[0]);
+  group.forEach((e,i)=>{ e.sort_order = i; });
+  saveEx(); render();
+}
+
+function saveForm(){
+  const name = document.getElementById('f_name').value.trim();
+  const reps = document.getElementById('f_reps').value.trim();
+  const focus = document.getElementById('f_focus').value.trim();
+  if (!name || !reps || !focus){ toast('Vul naam, herhalingen en focus in.'); return; }
+  const sets = Math.max(1, Math.min(10, parseInt(document.getElementById('f_sets').value)||3));
+  const mg = document.getElementById('f_mg').value;
+  const tips = document.getElementById('f_tips').value.split('\n').map(t=>t.trim()).filter(Boolean);
+  if (modal.id){
+    const ex = exercises.find(e=>e.id===modal.id);
+    Object.assign(ex, { name, reps, sets, focus, muscle_group: mg, tips });
+  } else {
+    const wk = modal.key || 'A';
+    const sort = exercises.filter(e=>e.workout_key===wk).length;
+    exercises.push({ id:'ex_'+Date.now(), name, reps, sets, focus, muscle_group:mg, workout_key:wk, tips, sort_order:sort });
+  }
+  saveEx(); modal=null; render();
+}
+
+render();
+</script>
+</body>
+</html>
